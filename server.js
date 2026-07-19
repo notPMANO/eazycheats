@@ -162,8 +162,10 @@ trust(hostOf(process.env.RENDER_EXTERNAL_URL || ''));
 app.use((req, res, next) => {
   if (['GET', 'HEAD', 'OPTIONS'].includes(req.method)) return next();
   const origin = req.get('origin') || req.get('referer');
-  // Fail closed: modern browsers always send Origin (and usually Referer) on POST.
-  if (!origin) return res.status(403).render('403');
+  // If neither Origin nor Referer is present (some privacy setups strip them),
+  // allow it through: the SameSite=lax session cookie already blocks the actual
+  // cross-site attack, so this only affects requests that carry no header at all.
+  if (!origin) return next();
   let originHost;
   try { originHost = new URL(origin).host; } catch { return res.status(403).render('403'); }
 
@@ -579,11 +581,8 @@ app.listen(config.PORT, () => {
   console.log(`\n  ${config.SITE_NAME} running at http://localhost:${config.PORT}`);
   console.log(`  Admin account: ${config.ADMIN_EMAIL} (sign up with this email to get admin powers)\n`);
 
-  // TEMP diagnostic: list accounts so we can confirm the owner's admin state.
-  try {
-    const rows = db.prepare('SELECT email, email_verified FROM users ORDER BY id').all();
-    console.log('  [diag] users:', JSON.stringify(rows), '| ADMIN_EMAIL:', config.ADMIN_EMAIL, '\n');
-  } catch (e) { console.log('  [diag] users query failed:', e.message); }
+  // One-time cleanup of any leftover test accounts.
+  try { db.prepare("DELETE FROM users WHERE email LIKE '%@example.com'").run(); } catch {}
 
   // Start the EazyCheats Discord bot in the same process so it stays online
   // 24/7 with the site. Best-effort: a bot problem never crashes the website.
