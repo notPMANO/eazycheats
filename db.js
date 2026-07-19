@@ -61,4 +61,11 @@ ensureColumn('users', 'pending_email', 'TEXT');
 // Enforce unique usernames (SQLite allows multiple NULLs, which is fine).
 db.exec('CREATE UNIQUE INDEX IF NOT EXISTS idx_users_username ON users(username)');
 
+// Seed the starter Roblox game if the games table is empty. This runs on every
+// boot, so the demo game reappears even after a free-tier disk reset.
+if (db.prepare('SELECT COUNT(*) AS n FROM games').get().n === 0) {
+  db.prepare('INSERT INTO games (title, slug, image, sort_order) VALUES (?, ?, ?, ?)')
+    .run('Roblox', 'roblox', '/img/roblox.svg', 1);
+}
+
 module.exports = db;
