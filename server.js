@@ -119,6 +119,11 @@ const authLimiter = rateLimit({
 
 // Make current user + site info available to every template.
 app.use((req, res, next) => {
+  // Define pageTitle as a per-request local so views that set `<% pageTitle = ... %>`
+  // write to THIS request's locals instead of leaking into the global scope.
+  // (Without this, a 404 render would set a global "Not found" that then stuck as
+  // the title of every page — like the homepage — that doesn't set its own.)
+  res.locals.pageTitle = undefined;
   res.locals.user = null;
   if (req.session.userId) {
     const u = db.prepare('SELECT id, email, username, display_name, email_verified, pending_email FROM users WHERE id = ?')
