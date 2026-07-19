@@ -24,10 +24,9 @@ services:
         value: production
       - key: ADMIN_EMAIL
         value: phoenix@edis.org
-      # Kept OFF until the Resend domain is verified + the API key is set, so
-      # signups/admin keep working in the meantime. Flip to "true" after that.
+      # Resend domain verified + API key set — real verification emails now send.
       - key: REQUIRE_EMAIL_VERIFICATION
-        value: "false"
+        value: "true"
       # Auto-generated strong secret — no need to set anything.
       - key: SESSION_SECRET
         generateValue: true
