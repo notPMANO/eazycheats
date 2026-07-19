@@ -11,9 +11,9 @@ module.exports = {
   SITE_NAME: 'EazyCheats',
   TAGLINE: 'We make you better at games',
 
-  // Public base URL — used to build verification links in emails.
-  // e.g. https://eazycheats.com  (falls back to the request host if unset)
-  APP_URL: process.env.APP_URL || '',
+  // Public base URL — used to build verification links + CSRF origin checks.
+  // On Render, RENDER_EXTERNAL_URL is set automatically, so this resolves itself.
+  APP_URL: process.env.APP_URL || process.env.RENDER_EXTERNAL_URL || '',
 
   // Where the database + uploads live. On a host with a mounted disk,
   // point DATA_DIR at that disk so data survives restarts/redeploys.

@@ -1,40 +1,50 @@
-# Render Blueprint — deploys EazyCheats as a Node web service with a
-# persistent disk for the SQLite database + uploads.
-# In Render: New → Blueprint → connect this repo. Then fill in the
-# SESSION_SECRET and SMTP_PASS values in the dashboard.
+# Render Blueprint — deploys EazyCheats as a Node web service.
+#
+# This version runs on the FREE plan so you can get it live at $0 and test it.
+# The database + uploads are NOT persistent on free (they reset on redeploy).
+# When you're ready for real use, switch to the "production" settings noted
+# below: change `plan: free` to `plan: starter`, uncomment the `disk:` block,
+# set DATA_DIR=/var/data, set APP_URL to your custom domain, add the SMTP_*
+# vars from Resend, and set REQUIRE_EMAIL_VERIFICATION=true.
 services:
   - type: web
     name: eazycheats
     runtime: node
-    plan: starter            # a paid plan is required for a persistent disk
+    plan: free
     buildCommand: npm install
     startCommand: npm start
     healthCheckPath: /
-    disk:
-      name: eazycheats-data
-      mountPath: /var/data
-      sizeGB: 1
+    # --- production: uncomment for a persistent disk (requires a paid plan) ---
+    # disk:
+    #   name: eazycheats-data
+    #   mountPath: /var/data
+    #   sizeGB: 1
     envVars:
       - key: NODE_ENV
         value: production
-      - key: DATA_DIR
-        value: /var/data
       - key: ADMIN_EMAIL
         value: phoenix@edis.org
-      - key: APP_URL
-        value: https://eazycheats.com
+      # Email verification stays off until Resend SMTP is added (below).
       - key: REQUIRE_EMAIL_VERIFICATION
-        value: "true"
-      - key: SMTP_HOST
-        value: smtp.resend.com
-      - key: SMTP_PORT
-        value: "465"
-      - key: SMTP_USER
-        value: resend
-      - key: MAIL_FROM
-        value: EazyCheats <no-reply@eazycheats.com>
-      # Secrets — set these in the Render dashboard, not here:
+        value: "false"
+      # Auto-generated strong secret — no need to set anything.
       - key: SESSION_SECRET
-        sync: false
-      - key: SMTP_PASS
-        sync: false
+        generateValue: true
+      # APP_URL resolves automatically from Render's RENDER_EXTERNAL_URL.
+      # --- production email (Resend) — fill these in later ---
+      # - key: DATA_DIR
+      #   value: /var/data
+      # - key: APP_URL
+      #   value: https://eazycheats.com
+      # - key: REQUIRE_EMAIL_VERIFICATION
+      #   value: "true"
+      # - key: SMTP_HOST
+      #   value: smtp.resend.com
+      # - key: SMTP_PORT
+      #   value: "465"
+      # - key: SMTP_USER
+      #   value: resend
+      # - key: MAIL_FROM
+      #   value: EazyCheats <no-reply@eazycheats.com>
+      # - key: SMTP_PASS
+      #   sync: false
