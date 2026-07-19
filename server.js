@@ -141,8 +141,17 @@ app.use((req, res, next) => {
 
 // ---------- CSRF defense (origin check on state-changing requests) ----------
 // SameSite=lax already blocks cross-site form POSTs; this rejects any that slip
-// through by requiring the Origin/Referer host to match one of our own host views.
-const CANONICAL_HOST = config.APP_URL ? (() => { try { return new URL(config.APP_URL).host; } catch { return ''; } })() : '';
+// through by requiring the Origin/Referer host to match one of our trusted hosts.
+// Trusted hosts = our custom domain (APP_URL) + its www/apex variant + the
+// platform URL (RENDER_EXTERNAL_URL), so the site works on eazycheats.com,
+// www.eazycheats.com, and eazycheats.onrender.com alike.
+function hostOf(u) { try { return new URL(/^https?:\/\//.test(u) ? u : 'https://' + u).host; } catch { return ''; } }
+const TRUSTED_HOSTS = new Set();
+function trust(h) { if (!h) return; const bare = h.replace(/^www\./, ''); TRUSTED_HOSTS.add(bare); TRUSTED_HOSTS.add('www.' + bare); }
+trust(hostOf(config.APP_URL));
+trust(hostOf(process.env.RENDER_EXTERNAL_URL || ''));
+(process.env.EXTRA_ORIGINS || '').split(',').map((s) => s.trim()).forEach((o) => trust(hostOf(o)));
+
 app.use((req, res, next) => {
   if (['GET', 'HEAD', 'OPTIONS'].includes(req.method)) return next();
   const origin = req.get('origin') || req.get('referer');
@@ -151,12 +160,11 @@ app.use((req, res, next) => {
   let originHost;
   try { originHost = new URL(origin).host; } catch { return res.status(403).render('403'); }
 
-  if (CANONICAL_HOST) {
-    // Production: the request's Origin must be our real domain.
-    if (originHost !== CANONICAL_HOST) return res.status(403).render('403');
+  if (TRUSTED_HOSTS.size) {
+    if (!TRUSTED_HOSTS.has(originHost)) return res.status(403).render('403');
     return next();
   }
-  // Dev / preview (no APP_URL set): accept our own host views and localhost.
+  // Dev / preview (no APP_URL/RENDER URL set): accept our own host views and localhost.
   const allowed = new Set([req.headers.host, req.get('host'), req.get('x-forwarded-host')].filter(Boolean));
   if (allowed.has(originHost) || /^(localhost|127\.0\.0\.1)(:\d+)?$/.test(originHost)) return next();
   return res.status(403).render('403');

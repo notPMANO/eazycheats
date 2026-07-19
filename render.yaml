@@ -47,6 +47,6 @@ services:
       # Store DB + uploads on the persistent disk mounted above.
       - key: DATA_DIR
         value: /var/data
-      # Set APP_URL to the custom domain once eazycheats.com DNS is pointed here.
-      # - key: APP_URL
-      #   value: https://eazycheats.com
+      # Custom domain — used for email links; both this + the onrender URL are trusted for CSRF.
+      - key: APP_URL
+        value: https://eazycheats.com
