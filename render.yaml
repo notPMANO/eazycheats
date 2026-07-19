@@ -24,27 +24,28 @@ services:
         value: production
       - key: ADMIN_EMAIL
         value: phoenix@edis.org
-      # Email verification stays off until Resend SMTP is added (below).
+      # Kept OFF until the Resend domain is verified + the API key is set, so
+      # signups/admin keep working in the meantime. Flip to "true" after that.
       - key: REQUIRE_EMAIL_VERIFICATION
         value: "false"
       # Auto-generated strong secret — no need to set anything.
       - key: SESSION_SECRET
         generateValue: true
       # APP_URL resolves automatically from Render's RENDER_EXTERNAL_URL.
-      # --- production email (Resend) — fill these in later ---
+      # --- Email (Resend via SMTP) ---
+      - key: SMTP_HOST
+        value: smtp.resend.com
+      - key: SMTP_PORT
+        value: "465"
+      - key: SMTP_USER
+        value: resend
+      - key: MAIL_FROM
+        value: EazyCheats <no-reply@eazycheats.com>
+      # SMTP_PASS = your Resend API key. Set it in the Render dashboard (secret).
+      - key: SMTP_PASS
+        sync: false
+      # --- production only: uncomment for a persistent disk + custom domain ---
       # - key: DATA_DIR
       #   value: /var/data
       # - key: APP_URL
       #   value: https://eazycheats.com
-      # - key: REQUIRE_EMAIL_VERIFICATION
-      #   value: "true"
-      # - key: SMTP_HOST
-      #   value: smtp.resend.com
-      # - key: SMTP_PORT
-      #   value: "465"
-      # - key: SMTP_USER
-      #   value: resend
-      # - key: MAIL_FROM
-      #   value: EazyCheats <no-reply@eazycheats.com>
-      # - key: SMTP_PASS
-      #   sync: false
