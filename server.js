@@ -15,6 +15,18 @@ const SqliteStore = require('./session-store')(session);
 
 const BCRYPT_COST = 12;
 
+// --- Refuse to boot with insecure config in production ---
+if (config.isProd) {
+  if (!process.env.SESSION_SECRET || config.SESSION_SECRET === 'change-this-secret-in-production') {
+    console.error('FATAL: SESSION_SECRET must be set to a strong random value in production.');
+    process.exit(1);
+  }
+  if (!config.APP_URL) {
+    console.error('FATAL: APP_URL must be set in production (used for CSRF origin checks and email links).');
+    process.exit(1);
+  }
+}
+
 const app = express();
 // Trust the hosting proxy (Render/Railway/nginx) so secure cookies + protocol work.
 app.set('trust proxy', 1);
@@ -30,20 +42,29 @@ const UPLOAD_DIR = config.DATA_DIR
   : path.join(__dirname, 'public', 'uploads');
 if (!fs.existsSync(UPLOAD_DIR)) fs.mkdirSync(UPLOAD_DIR, { recursive: true });
 
+// Only these image types are allowed; the stored extension is derived from this
+// map (never from the client-supplied filename) so a spoofed Content-Type can't
+// get an executable .html/.js/.svg written into the served uploads folder.
+// SVG is intentionally excluded (it can carry embedded scripts).
+const ALLOWED_IMAGE_EXT = {
+  'image/png': '.png',
+  'image/jpeg': '.jpg',
+  'image/gif': '.gif',
+  'image/webp': '.webp',
+};
 const storage = multer.diskStorage({
   destination: (req, file, cb) => cb(null, UPLOAD_DIR),
   filename: (req, file, cb) => {
-    const ext = path.extname(file.originalname).toLowerCase();
-    const name = crypto.randomBytes(10).toString('hex') + ext;
-    cb(null, name);
+    const ext = ALLOWED_IMAGE_EXT[file.mimetype] || '.bin';
+    cb(null, crypto.randomBytes(10).toString('hex') + ext);
   },
 });
 const upload = multer({
   storage,
   limits: { fileSize: 5 * 1024 * 1024 }, // 5MB
   fileFilter: (req, file, cb) => {
-    const ok = /image\/(png|jpe?g|gif|webp|svg\+xml)/.test(file.mimetype);
-    cb(ok ? null : new Error('Only image files are allowed'), ok);
+    const ok = !!ALLOWED_IMAGE_EXT[file.mimetype];
+    cb(ok ? null : new Error('Only PNG, JPG, GIF or WEBP images are allowed'), ok);
   },
 });
 
@@ -100,10 +121,16 @@ const authLimiter = rateLimit({
 app.use((req, res, next) => {
   res.locals.user = null;
   if (req.session.userId) {
-    const u = db.prepare('SELECT id, email, username, display_name, is_admin, email_verified, pending_email FROM users WHERE id = ?')
+    const u = db.prepare('SELECT id, email, username, display_name, email_verified, pending_email FROM users WHERE id = ?')
       .get(req.session.userId);
-    if (u) res.locals.user = u;
-    else req.session.destroy(() => {});
+    if (u) {
+      // Admin authority is derived here, not trusted from a stored column:
+      // must be the configured admin email AND have a verified email.
+      u.is_admin = (u.email === config.ADMIN_EMAIL && u.email_verified) ? 1 : 0;
+      res.locals.user = u;
+    } else {
+      req.session.destroy(() => {});
+    }
   }
   res.locals.site = { name: config.SITE_NAME, tagline: config.TAGLINE };
   res.locals.path = req.path;
@@ -119,7 +146,8 @@ const CANONICAL_HOST = config.APP_URL ? (() => { try { return new URL(config.APP
 app.use((req, res, next) => {
   if (['GET', 'HEAD', 'OPTIONS'].includes(req.method)) return next();
   const origin = req.get('origin') || req.get('referer');
-  if (!origin) return next(); // same-origin posts may omit it; SameSite still guards
+  // Fail closed: modern browsers always send Origin (and usually Referer) on POST.
+  if (!origin) return res.status(403).render('403');
   let originHost;
   try { originHost = new URL(origin).host; } catch { return res.status(403).render('403'); }
 
@@ -164,6 +192,19 @@ function productCount(gameId) {
 // Absolute base URL for building links in emails (prefers configured APP_URL).
 function baseUrl(req) {
   return config.APP_URL || `${req.protocol}://${req.get('host')}`;
+}
+
+// Authoritative admin check for a raw user row (email + verified).
+function isAdminUser(u) {
+  return !!(u && u.email === config.ADMIN_EMAIL && u.email_verified);
+}
+
+// Log a user in with a fresh session id to prevent session fixation.
+function establishSession(req, userId, done) {
+  req.session.regenerate((err) => {
+    if (!err) req.session.userId = userId;
+    done();
+  });
 }
 
 const USERNAME_RE = /^[a-zA-Z0-9_]{3,20}$/;
@@ -233,9 +274,10 @@ app.post('/login', authLimiter, (req, res) => {
     flash(req, 'error', 'Wrong email or password.');
     return res.status(401).render('login', { email });
   }
-  req.session.userId = user.id;
-  flash(req, 'success', 'Welcome back!');
-  res.redirect(user.is_admin ? '/admin' : '/');
+  establishSession(req, user.id, () => {
+    flash(req, 'success', 'Welcome back!');
+    res.redirect(isAdminUser(user) ? '/admin' : '/');
+  });
 });
 
 app.get('/signup', (req, res) => {
@@ -269,18 +311,21 @@ app.post('/signup', authLimiter, async (req, res) => {
     'INSERT INTO users (email, username, display_name, password_hash, is_admin, email_verified, verify_token) VALUES (?, ?, ?, ?, ?, ?, ?)'
   ).run(email, username, display_name || username, hash, isAdmin, verified, token);
 
-  req.session.userId = info.lastInsertRowid;
+  const newUserId = info.lastInsertRowid;
 
   if (config.REQUIRE_EMAIL_VERIFICATION) {
     const link = `${baseUrl(req)}/verify?token=${token}`;
     let sent = false;
     try { ({ sent } = await mailer.sendVerification(email, link)); }
     catch (e) { console.error('Verification email failed:', e.message); }
-    // If email is configured it was sent; otherwise fall back to showing the link.
-    return res.render('verify-sent', { email, link: sent ? null : link });
+    // Log them in (unverified) with a fresh session; admin powers stay off until verified.
+    return establishSession(req, newUserId, () =>
+      res.render('verify-sent', { email, link: sent ? null : link }));
   }
-  flash(req, 'success', 'Account created — welcome to EazyCheats!');
-  res.redirect(isAdmin ? '/admin' : '/');
+  establishSession(req, newUserId, () => {
+    flash(req, 'success', 'Account created — welcome to EazyCheats!');
+    res.redirect(email === config.ADMIN_EMAIL ? '/admin' : '/');
+  });
 });
 
 app.get('/verify', (req, res) => {
@@ -288,9 +333,10 @@ app.get('/verify', (req, res) => {
   const user = db.prepare('SELECT * FROM users WHERE verify_token = ?').get(token);
   if (!user) { flash(req, 'error', 'That verification link is invalid or expired.'); return res.redirect('/'); }
   db.prepare('UPDATE users SET email_verified = 1, verify_token = NULL WHERE id = ?').run(user.id);
-  req.session.userId = user.id;
-  flash(req, 'success', 'Email verified — you are all set!');
-  res.redirect(user.is_admin ? '/admin' : '/');
+  establishSession(req, user.id, () => {
+    flash(req, 'success', 'Email verified — you are all set!');
+    res.redirect(user.email === config.ADMIN_EMAIL ? '/admin' : '/');
+  });
 });
 
 app.post('/logout', (req, res) => {
