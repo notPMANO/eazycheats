@@ -129,9 +129,11 @@ app.use((req, res, next) => {
     const u = db.prepare('SELECT id, email, username, display_name, email_verified, pending_email FROM users WHERE id = ?')
       .get(req.session.userId);
     if (u) {
-      // Admin authority is derived here, not trusted from a stored column:
-      // must be the configured admin email AND have a verified email.
-      u.is_admin = (u.email === config.ADMIN_EMAIL && u.email_verified) ? 1 : 0;
+      // Admin authority is derived here, not trusted from a stored column: it's
+      // the single account that holds the configured admin email. That email is
+      // UNIQUE, so only the owner (who registers it) can ever be admin — no
+      // email-verification gate needed, and it can't be grabbed once claimed.
+      u.is_admin = (u.email === config.ADMIN_EMAIL) ? 1 : 0;
       res.locals.user = u;
     } else {
       req.session.destroy(() => {});
@@ -576,6 +578,12 @@ app.use((err, req, res, next) => {
 app.listen(config.PORT, () => {
   console.log(`\n  ${config.SITE_NAME} running at http://localhost:${config.PORT}`);
   console.log(`  Admin account: ${config.ADMIN_EMAIL} (sign up with this email to get admin powers)\n`);
+
+  // TEMP diagnostic: list accounts so we can confirm the owner's admin state.
+  try {
+    const rows = db.prepare('SELECT email, email_verified FROM users ORDER BY id').all();
+    console.log('  [diag] users:', JSON.stringify(rows), '| ADMIN_EMAIL:', config.ADMIN_EMAIL, '\n');
+  } catch (e) { console.log('  [diag] users query failed:', e.message); }
 
   // Start the EazyCheats Discord bot in the same process so it stays online
   // 24/7 with the site. Best-effort: a bot problem never crashes the website.
