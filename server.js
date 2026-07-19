@@ -184,6 +184,18 @@ function flash(req, type, message) {
   req.session.flash = { type, message };
 }
 
+// ---------- Email-verification gate ----------
+// A logged-in user whose email isn't verified can't use the site — every route
+// shows the "verify your email" page until they click the link. Only the
+// verification flow itself and logout are allowed through.
+const VERIFY_ALLOWED_PATHS = new Set(['/verify', '/verify-email', '/resend-verification', '/logout']);
+app.use((req, res, next) => {
+  const u = res.locals.user;
+  if (!u || u.email_verified) return next(); // logged out or verified → normal access
+  if (VERIFY_ALLOWED_PATHS.has(req.path)) return next();
+  return res.status(403).render('verify-pending', { email: u.email, resent: false });
+});
+
 // ---------- Helpers ----------
 function slugify(text) {
   return String(text).toLowerCase().trim()
@@ -359,6 +371,19 @@ app.get('/verify', (req, res) => {
 
 app.post('/logout', (req, res) => {
   req.session.destroy(() => res.redirect('/'));
+});
+
+// Re-send the verification email to the logged-in (unverified) user.
+app.post('/resend-verification', authLimiter, requireLogin, async (req, res) => {
+  const user = db.prepare('SELECT * FROM users WHERE id = ?').get(res.locals.user.id);
+  if (!user) return res.redirect('/login');
+  if (user.email_verified) return res.redirect('/');
+  const token = user.verify_token || crypto.randomBytes(24).toString('hex');
+  db.prepare('UPDATE users SET verify_token = ? WHERE id = ?').run(token, user.id);
+  const link = `${baseUrl(req)}/verify?token=${token}`;
+  try { await mailer.sendVerification(user.email, link); }
+  catch (e) { console.error('Resend verification failed:', e.message); }
+  res.render('verify-pending', { email: user.email, resent: true });
 });
 
 // ============================================================

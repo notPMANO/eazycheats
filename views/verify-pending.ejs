@@ -1,0 +1,29 @@
+<% pageTitle = 'Verify your email' %>
+<%- include('partials/header') %>
+
+<section class="auth-wrap">
+  <div class="auth-card center">
+    <h1>Verify your email</h1>
+    <p class="muted">Before you can use EazyCheats, please confirm your email address.
+      We sent a verification link to <strong><%= email %></strong>.</p>
+
+    <% if (typeof resent !== 'undefined' && resent) { %>
+      <div class="flash flash-success" style="margin:16px 0">Verification email re-sent — check your inbox.</div>
+    <% } %>
+
+    <p class="muted" style="font-size:13px; margin-top:14px">
+      Open the email and click the button to unlock your account. Don't forget to check your spam folder.
+    </p>
+
+    <div style="display:flex; gap:10px; justify-content:center; flex-wrap:wrap; margin-top:20px">
+      <form action="/resend-verification" method="POST" class="inline">
+        <button type="submit" class="btn btn-primary">Resend email</button>
+      </form>
+      <form action="/logout" method="POST" class="inline">
+        <button type="submit" class="btn btn-ghost">Log out</button>
+      </form>
+    </div>
+  </div>
+</section>
+
+<%- include('partials/footer') %>
