@@ -3,3 +3,8 @@ data/
 public/uploads/
 .env
 npm-debug.log*
+
+# Discord bot now runs inside the web service — include its source, but never
+# its installed deps or its local secrets file.
+discord-bot/node_modules/
+discord-bot/.env

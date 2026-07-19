@@ -50,3 +50,11 @@ services:
       # Custom domain — used for email links; both this + the onrender URL are trusted for CSRF.
       - key: APP_URL
         value: https://eazycheats.com
+      # --- Discord bot (runs inside this service) ---
+      # DISCORD_TOKEN is a secret — set it in the Render dashboard (Environment tab).
+      - key: DISCORD_TOKEN
+        sync: false
+      - key: GUILD_ID
+        value: "1528299797008875600"
+      - key: CLIENT_ID
+        value: "1528303044888891582"

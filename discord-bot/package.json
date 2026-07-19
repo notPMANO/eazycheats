@@ -1,0 +1,19 @@
+{
+  "name": "eazycheats-discord-bot",
+  "version": "1.0.0",
+  "description": "EazyCheats Discord server auto-setup + ticket system",
+  "type": "commonjs",
+  "main": "bot.js",
+  "scripts": {
+    "setup": "node setup.js",
+    "start": "node bot.js",
+    "invite": "node invite.js"
+  },
+  "engines": {
+    "node": ">=18"
+  },
+  "dependencies": {
+    "discord.js": "^14.16.3",
+    "dotenv": "^16.4.7"
+  }
+}

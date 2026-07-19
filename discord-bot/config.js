@@ -1,0 +1,160 @@
+// ===================================================================
+//  EazyCheats server blueprint
+//  Edit anything here and re-run `npm run setup` to apply changes.
+//  (Setup is safe to run repeatedly — it never duplicates or deletes.)
+// ===================================================================
+
+// --- ROLES (top of the list = highest in the hierarchy) ---
+// hoist  = show members separately in the sidebar
+// perms  = extra permissions granted to the role
+const ROLES = [
+  {
+    name: 'Moderator',
+    color: 0xe74c3c, // red
+    hoist: true,
+    mentionable: true,
+    perms: [
+      'ManageMessages', 'KickMembers', 'BanMembers', 'ModerateMembers',
+      'MuteMembers', 'DeafenMembers', 'MoveMembers', 'ManageNicknames',
+      'ManageThreads', 'CreatePublicThreads', 'CreatePrivateThreads', 'ViewAuditLog',
+    ],
+  },
+  {
+    name: 'Dev',
+    color: 0x2ecc71, // green
+    hoist: true,
+    mentionable: true,
+    perms: ['ManageMessages', 'ManageThreads'],
+  },
+  {
+    name: 'Support',
+    color: 0x3498db, // blue
+    hoist: true,
+    mentionable: true,
+    perms: ['ManageMessages', 'ManageThreads'],
+  },
+  {
+    name: 'Customer',
+    color: 0xf1c40f, // gold
+    hoist: true,
+    mentionable: false,
+    perms: [],
+  },
+  {
+    name: 'Free User',
+    color: 0x95a5a6, // grey
+    hoist: false,
+    mentionable: false,
+    perms: [],
+  },
+];
+
+// Roles that count as "staff" — they can see staff channels.
+const STAFF_ROLES = ['Moderator', 'Dev', 'Support'];
+
+// Roles that can see & handle TICKETS specifically (a subset of staff).
+const TICKET_STAFF_ROLES = ['Moderator', 'Support'];
+
+// Channel where closed-ticket transcripts get logged (in the STAFF category).
+const TICKET_LOG_CHANNEL = 'ticket-logs';
+
+// Channel where new-member welcome greetings are posted.
+const WELCOME_CHANNEL = 'welcome';
+
+// The role granted when a member clicks "Agree to the Rules".
+// Members must have this role to see/talk in the server (the rules gate).
+const VERIFIED_ROLE = 'Free User';
+
+// The rules shown in the welcome gate. Edit freely + re-run setup.
+const RULES = [
+  'Be respectful — no harassment, hate speech, slurs, or discrimination.',
+  'No spam, mass pings, or advertising / self-promo without staff permission.',
+  'Keep it safe-for-work. No NSFW, gore, or shock content.',
+  'No scamming, phishing, or malware. Chargebacks = permanent ban.',
+  'Use the correct channels, and open a ticket in #open-a-ticket for support.',
+  "Follow Discord's Terms of Service and Community Guidelines at all times.",
+  'Staff decisions are final — listen to Moderators, Dev, and Support.',
+];
+
+// --- CHANNEL LAYOUT ---
+// access: 'public' | 'member' | 'customer' | 'staff'
+//   public   -> EVERYONE, even before agreeing to rules (the gate channel)
+//   member   -> only people who agreed (Free User) + Customer + staff
+//   customer -> only Customer + staff
+//   staff    -> only staff roles
+// readonly: members can read but not send (staff can still send)
+// type: 'text' | 'voice'
+const CATEGORIES = [
+  {
+    name: '📢 INFORMATION',
+    access: 'member',
+    channels: [
+      // Public greeting channel — the bot posts a welcome here when someone joins.
+      { name: 'welcome', access: 'public', readonly: true, welcomeInfo: true, topic: 'New members get greeted here. Head to #verify to unlock the server.' },
+      // The gate: visible to everyone, holds the rules + Agree button.
+      { name: 'verify', access: 'public', readonly: true, verifyPanel: true, topic: 'Read the rules and click Agree to unlock the server.' },
+      { name: 'rules',          readonly: true,  topic: 'Server rules. Breaking them = warning, mute, or ban.' },
+      { name: 'announcements',  readonly: true,  topic: 'Official EazyCheats announcements.' },
+      { name: 'updates',        readonly: true,  topic: 'Product & cheat updates, patch notes, undetected status.' },
+      { name: 'faq',            readonly: true,  topic: 'Frequently asked questions before you open a ticket.' },
+    ],
+  },
+  {
+    name: '🎫 SUPPORT',
+    access: 'member',
+    channels: [
+      { name: 'open-a-ticket',  readonly: true, ticketPanel: true, topic: 'Click the button to open a private support ticket.' },
+      { name: 'support-info',   readonly: true, topic: 'How support works and what info to have ready.' },
+    ],
+  },
+  {
+    name: '💬 COMMUNITY',
+    access: 'member',
+    channels: [
+      { name: 'general',    topic: 'General chat.' },
+      { name: 'off-topic',  topic: 'Anything goes (within the rules).' },
+      { name: 'media',      topic: 'Clips, screenshots and highlights.' },
+      { name: 'memes',      topic: 'Memes only.' },
+      { name: 'giveaways',  readonly: true, topic: 'Giveaways and events.' },
+    ],
+  },
+  {
+    name: '⭐ CUSTOMER',
+    access: 'customer',
+    channels: [
+      { name: 'downloads',      readonly: true, topic: 'Product downloads — customers only.' },
+      { name: 'changelog',      readonly: true, topic: 'Version history for your purchases.' },
+      { name: 'product-status', readonly: true, topic: 'Live status: undetected / updating / down.' },
+      { name: 'customer-chat',  topic: 'Private chat for paying customers.' },
+    ],
+  },
+  {
+    name: '🛠️ STAFF',
+    access: 'staff',
+    channels: [
+      { name: 'staff-chat',     topic: 'Private staff discussion.' },
+      { name: 'staff-commands', topic: 'Run bot/admin commands here.' },
+      { name: 'mod-log',        readonly: true, topic: 'Moderation and bot action log.' },
+      // Ticket transcripts — only Support + Moderator can see these.
+      { name: 'ticket-logs', access: 'ticketstaff', topic: 'Transcripts of closed tickets. Delete once no longer needed.' },
+    ],
+  },
+  {
+    name: '🔊 VOICE',
+    access: 'member',
+    channels: [
+      { name: 'General',   type: 'voice' },
+      { name: 'Music',     type: 'voice' },
+      { name: 'Support',   type: 'voice' },
+      { name: 'Staff',     type: 'voice', access: 'staff' },
+    ],
+  },
+];
+
+// The category where new ticket channels get created (made automatically).
+const TICKET_CATEGORY = '🎟️ TICKETS';
+
+module.exports = {
+  ROLES, STAFF_ROLES, TICKET_STAFF_ROLES, VERIFIED_ROLE, RULES,
+  CATEGORIES, TICKET_CATEGORY, TICKET_LOG_CHANNEL, WELCOME_CHANNEL,
+};

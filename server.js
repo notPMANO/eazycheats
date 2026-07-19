@@ -571,4 +571,16 @@ app.use((err, req, res, next) => {
 app.listen(config.PORT, () => {
   console.log(`\n  ${config.SITE_NAME} running at http://localhost:${config.PORT}`);
   console.log(`  Admin account: ${config.ADMIN_EMAIL} (sign up with this email to get admin powers)\n`);
+
+  // Start the EazyCheats Discord bot in the same process so it stays online
+  // 24/7 with the site. Best-effort: a bot problem never crashes the website.
+  try {
+    if (process.env.DISCORD_TOKEN) {
+      require('./discord-bot/bot').startBot();
+    } else {
+      console.log('  Discord bot: DISCORD_TOKEN not set — skipping.\n');
+    }
+  } catch (err) {
+    console.error('  Discord bot failed to start:', err.message, '\n');
+  }
 });
