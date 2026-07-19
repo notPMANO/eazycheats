@@ -1,0 +1,36 @@
+<% pageTitle = product.title %>
+<%- include('partials/header') %>
+
+<section class="page-head">
+  <div class="page-head-inner">
+    <div class="page-head-icon">
+      <% if (product.image) { %><img src="<%= product.image %>" alt="<%= product.title %>"><% } else if (game.image) { %><img src="<%= game.image %>" alt="<%= game.title %>"><% } else { %><span><%= product.title.charAt(0).toUpperCase() %></span><% } %>
+    </div>
+    <div>
+      <nav class="crumbs"><a href="/">Home</a> <span>/</span> <a href="/game/<%= game.slug %>"><%= game.title %></a> <span>/</span> <%= product.title %></nav>
+      <h1><%= product.title %></h1>
+      <% if (product.price) { %><span class="price price-lg"><%= product.price %></span><% } %>
+    </div>
+    <% if (user && user.is_admin) { %>
+      <div class="page-head-actions">
+        <a href="/admin/products/<%= product.id %>/edit" class="btn btn-ghost">Edit</a>
+        <form action="/admin/products/<%= product.id %>/delete" method="POST" class="inline" onsubmit="return confirm('Delete this product?');">
+          <button type="submit" class="btn btn-danger">Delete</button>
+        </form>
+      </div>
+    <% } %>
+  </div>
+</section>
+
+<section class="container">
+  <article class="guide">
+    <% if (product.summary) { %><p class="guide-summary"><%= product.summary %></p><% } %>
+    <% if (product.content && product.content.trim()) { %>
+      <div class="guide-body"><%= product.content %></div>
+    <% } else { %>
+      <p class="muted">No guide content has been added for this product yet.</p>
+    <% } %>
+  </article>
+</section>
+
+<%- include('partials/footer') %>

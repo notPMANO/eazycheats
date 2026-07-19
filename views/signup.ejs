@@ -1,0 +1,31 @@
+<% pageTitle = 'Sign up' %>
+<%- include('partials/header') %>
+
+<section class="auth-wrap">
+  <div class="auth-card">
+    <h1>Create your account</h1>
+    <p class="muted">Join EazyCheats and start leveling up.</p>
+    <form action="/signup" method="POST" class="form">
+      <label>Email
+        <input type="email" name="email" value="<%= email %>" required autofocus autocomplete="email">
+      </label>
+      <label>Username <small class="hint">3–20 letters, numbers or _</small>
+        <input type="text" name="username" value="<%= username %>" required minlength="3" maxlength="20" pattern="[a-zA-Z0-9_]{3,20}" autocomplete="username">
+      </label>
+      <label>Display name <small class="hint">Shown around the site. Optional.</small>
+        <input type="text" name="display_name" value="<%= display_name %>" maxlength="40" autocomplete="nickname">
+      </label>
+      <label>Password
+        <input type="password" name="password" required minlength="8" autocomplete="new-password">
+        <small class="hint">At least 8 characters.</small>
+      </label>
+      <label>Confirm password
+        <input type="password" name="confirm" required minlength="8" autocomplete="new-password">
+      </label>
+      <button type="submit" class="btn btn-primary btn-block">Create account</button>
+    </form>
+    <p class="auth-alt">Already have an account? <a href="/login">Log in</a></p>
+  </div>
+</section>
+
+<%- include('partials/footer') %>

@@ -1,0 +1,40 @@
+<% pageTitle = game ? 'Edit game' : 'Add game' %>
+<%- include('../partials/header') %>
+
+<section class="page-head">
+  <div class="page-head-inner">
+    <div>
+      <nav class="crumbs"><a href="/admin">Admin</a> <span>/</span> <%= game ? 'Edit game' : 'Add game' %></nav>
+      <h1><%= game ? 'Edit game' : 'Add a game' %></h1>
+    </div>
+  </div>
+</section>
+
+<section class="container narrow">
+  <form action="<%= game ? '/admin/games/' + game.id : '/admin/games' %>" method="POST" enctype="multipart/form-data" class="form card-form">
+    <label>Game title
+      <input type="text" name="title" value="<%= game ? game.title : '' %>" placeholder="e.g. Roblox" required autofocus>
+    </label>
+
+    <label>Logo / image</label>
+    <div class="dropzone" id="dropzone">
+      <input type="file" name="image" id="fileInput" accept="image/*" hidden>
+      <div class="dropzone-inner">
+        <img id="preview" class="dropzone-preview" src="<%= game && game.image ? game.image : '' %>" alt="" style="<%= game && game.image ? '' : 'display:none' %>">
+        <div id="dropPrompt" class="dropzone-prompt" style="<%= game && game.image ? 'display:none' : '' %>">
+          <span class="dz-icon">⬆</span>
+          <p>Drop an image here or <span class="link">click to choose</span></p>
+          <small class="muted">PNG, JPG, GIF, WEBP or SVG · up to 5MB</small>
+        </div>
+      </div>
+    </div>
+    <% if (game) { %><small class="hint">Leave empty to keep the current image.</small><% } %>
+
+    <div class="form-actions">
+      <button type="submit" class="btn btn-primary"><%= game ? 'Save changes' : 'Add game' %></button>
+      <a href="/admin" class="btn btn-ghost">Cancel</a>
+    </div>
+  </form>
+</section>
+
+<%- include('../partials/footer') %>

@@ -1,0 +1,49 @@
+<% pageTitle = game.title %>
+<%- include('partials/header') %>
+
+<section class="page-head">
+  <div class="page-head-inner">
+    <div class="page-head-icon">
+      <% if (game.image) { %><img src="<%= game.image %>" alt="<%= game.title %>"><% } else { %><span><%= game.title.charAt(0).toUpperCase() %></span><% } %>
+    </div>
+    <div>
+      <nav class="crumbs"><a href="/">Home</a> <span>/</span> <%= game.title %></nav>
+      <h1><%= game.title %></h1>
+      <p class="muted"><%= products.length %> product<%= products.length === 1 ? '' : 's' %></p>
+    </div>
+    <% if (user && user.is_admin) { %>
+      <div class="page-head-actions">
+        <a href="/admin/games/<%= game.id %>/products/new" class="btn btn-primary">+ Add product</a>
+        <a href="/admin/games/<%= game.id %>/edit" class="btn btn-ghost">Edit game</a>
+      </div>
+    <% } %>
+  </div>
+</section>
+
+<section class="container">
+  <% if (products.length === 0) { %>
+    <div class="empty">
+      <p>No products for <%= game.title %> yet.</p>
+      <% if (user && user.is_admin) { %>
+        <a href="/admin/games/<%= game.id %>/products/new" class="btn btn-primary">Add the first product</a>
+      <% } %>
+    </div>
+  <% } else { %>
+    <div class="product-grid">
+      <% products.forEach(function(p) { %>
+        <a href="/game/<%= game.slug %>/<%= p.slug %>" class="product-card">
+          <div class="product-card-img">
+            <% if (p.image) { %><img src="<%= p.image %>" alt="<%= p.title %>"><% } else { %><span><%= game.title.charAt(0) %></span><% } %>
+          </div>
+          <div class="product-card-body">
+            <h3><%= p.title %></h3>
+            <% if (p.summary) { %><p class="muted"><%= p.summary %></p><% } %>
+            <% if (p.price) { %><span class="price"><%= p.price %></span><% } %>
+          </div>
+        </a>
+      <% }); %>
+    </div>
+  <% } %>
+</section>
+
+<%- include('partials/footer') %>

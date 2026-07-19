@@ -1,0 +1,21 @@
+<% pageTitle = 'Log in' %>
+<%- include('partials/header') %>
+
+<section class="auth-wrap">
+  <div class="auth-card">
+    <h1>Welcome back</h1>
+    <p class="muted">Log in to your EazyCheats account.</p>
+    <form action="/login" method="POST" class="form">
+      <label>Email
+        <input type="email" name="email" value="<%= email %>" required autofocus autocomplete="email">
+      </label>
+      <label>Password
+        <input type="password" name="password" required autocomplete="current-password">
+      </label>
+      <button type="submit" class="btn btn-primary btn-block">Log in</button>
+    </form>
+    <p class="auth-alt">No account? <a href="/signup">Create one</a></p>
+  </div>
+</section>
+
+<%- include('partials/footer') %>

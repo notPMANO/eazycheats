@@ -1,0 +1,26 @@
+{
+  "name": "eazycheats",
+  "version": "1.0.0",
+  "description": "EazyCheats - We make you better at games",
+  "type": "commonjs",
+  "main": "server.js",
+  "scripts": {
+    "start": "node --no-warnings server.js",
+    "dev": "node --no-warnings --watch server.js",
+    "seed": "node --no-warnings seed.js"
+  },
+  "engines": {
+    "node": ">=22"
+  },
+  "dependencies": {
+    "bcryptjs": "^2.4.3",
+    "dotenv": "^16.4.7",
+    "ejs": "^3.1.10",
+    "express": "^4.21.2",
+    "express-rate-limit": "^8.6.0",
+    "express-session": "^1.18.1",
+    "helmet": "^8.3.0",
+    "multer": "^2.2.0",
+    "nodemailer": "^9.0.3"
+  }
+}

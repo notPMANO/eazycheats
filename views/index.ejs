@@ -1,0 +1,65 @@
+<%- include('partials/header') %>
+
+<section class="hero">
+  <div class="hero-glow"></div>
+  <div class="hero-content">
+    <p class="hero-eyebrow">Guides &middot; Tools &middot; Products</p>
+    <h1 class="hero-title">We make you <span class="grad">better at games</span></h1>
+    <p class="hero-sub">Premium guides and products for the games you love. Level up, dominate, and play smarter with EazyCheats.</p>
+    <div class="hero-actions">
+      <a href="#games" class="btn btn-primary btn-lg">Browse games</a>
+      <% if (!user) { %><a href="/signup" class="btn btn-ghost btn-lg">Create account</a><% } %>
+    </div>
+  </div>
+  <a href="#games" class="scroll-cue" aria-label="Scroll to games">
+    <span></span>
+  </a>
+</section>
+
+<section id="games" class="games-section">
+  <div class="games-inner">
+  <div class="section-head">
+    <h2>Games</h2>
+    <p class="muted">Pick a game to see its guides and products.</p>
+  </div>
+
+  <% if (games.length === 0) { %>
+    <div class="empty">
+      <p>No games yet.</p>
+      <% if (user && user.is_admin) { %>
+        <a href="/admin/games/new" class="btn btn-primary">Add your first game</a>
+      <% } %>
+    </div>
+  <% } else { %>
+    <div class="games-grid">
+      <% games.forEach(function(g) { %>
+        <a href="/game/<%= g.slug %>" class="game-card">
+          <div class="game-card-img">
+            <% if (g.image) { %>
+              <img src="<%= g.image %>" alt="<%= g.title %>">
+            <% } else { %>
+              <span class="game-card-initial"><%= g.title.charAt(0).toUpperCase() %></span>
+            <% } %>
+          </div>
+          <div class="game-card-body">
+            <span class="game-card-title"><%= g.title %></span>
+            <span class="game-card-count">Products: <%= g.product_count %></span>
+          </div>
+        </a>
+      <% }); %>
+
+      <% if (user && user.is_admin) { %>
+        <a href="/admin/games/new" class="game-card game-card-add">
+          <div class="game-card-img"><span class="plus">+</span></div>
+          <div class="game-card-body">
+            <span class="game-card-title">Add game</span>
+            <span class="game-card-count">Admin only</span>
+          </div>
+        </a>
+      <% } %>
+    </div>
+  <% } %>
+  </div>
+</section>
+
+<%- include('partials/footer') %>

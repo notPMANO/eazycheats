@@ -1,0 +1,52 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title><%= typeof pageTitle !== 'undefined' ? pageTitle + ' · ' + site.name : site.name + ' — ' + site.tagline %></title>
+  <meta name="description" content="<%= site.tagline %>. Guides and products for your favorite games.">
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="stylesheet" href="/css/styles.css">
+  <link rel="icon" href="/img/favicon.svg" type="image/svg+xml">
+</head>
+<body>
+  <header class="topbar">
+    <div class="topbar-inner">
+      <a href="/" class="brand">
+        <span class="brand-mark">EZ</span>
+        <span class="brand-name">Eazy<span class="brand-accent">Cheats</span></span>
+      </a>
+      <nav class="topnav">
+        <a href="/" class="<%= path === '/' ? 'active' : '' %>">Home</a>
+        <a href="/#games">Games</a>
+      </nav>
+      <div class="topbar-auth">
+        <% if (user) { %>
+          <% if (user.is_admin) { %>
+            <a href="/admin" class="btn btn-admin">Admin Panel</a>
+          <% } %>
+          <a href="/account" class="user-chip" title="Account settings — <%= user.email %>">
+            <%= user.display_name || user.username || user.email.split('@')[0] %>
+          </a>
+          <form action="/logout" method="POST" class="inline">
+            <button type="submit" class="btn btn-ghost">Log out</button>
+          </form>
+        <% } else { %>
+          <a href="/login" class="btn btn-ghost">Log in</a>
+          <a href="/signup" class="btn btn-primary">Sign up</a>
+        <% } %>
+      </div>
+    </div>
+  </header>
+
+  <% if (user && !user.email_verified) { %>
+    <div class="verify-banner">
+      Your email isn't verified yet. Check your inbox for the verification link.
+    </div>
+  <% } %>
+
+  <% if (flash) { %>
+    <div class="flash flash-<%= flash.type %>"><%= flash.message %></div>
+  <% } %>
+
+  <main class="main">

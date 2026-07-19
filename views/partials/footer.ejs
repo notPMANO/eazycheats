@@ -1,0 +1,20 @@
+  </main>
+
+  <footer class="site-footer">
+    <div class="footer-inner">
+      <div>
+        <span class="brand-name">Eazy<span class="brand-accent">Cheats</span></span>
+        <p class="muted"><%= site.tagline %></p>
+      </div>
+      <div class="footer-links">
+        <a href="/">Home</a>
+        <a href="/#games">Games</a>
+        <% if (!user) { %><a href="/login">Log in</a><% } %>
+      </div>
+    </div>
+    <p class="footer-legal muted">&copy; <span id="year"></span> EazyCheats. For entertainment &amp; educational use.</p>
+  </footer>
+
+  <script src="/js/main.js"></script>
+</body>
+</html>

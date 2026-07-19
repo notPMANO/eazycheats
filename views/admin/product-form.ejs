@@ -1,0 +1,52 @@
+<% pageTitle = product ? 'Edit product' : 'Add product' %>
+<%- include('../partials/header') %>
+
+<section class="page-head">
+  <div class="page-head-inner">
+    <div>
+      <nav class="crumbs"><a href="/admin">Admin</a> <span>/</span> <a href="/game/<%= game.slug %>"><%= game.title %></a> <span>/</span> <%= product ? 'Edit product' : 'Add product' %></nav>
+      <h1><%= product ? 'Edit product' : 'Add product to ' + game.title %></h1>
+    </div>
+  </div>
+</section>
+
+<section class="container narrow">
+  <form action="<%= product ? '/admin/products/' + product.id : '/admin/games/' + game.id + '/products' %>" method="POST" enctype="multipart/form-data" class="form card-form">
+    <label>Product title
+      <input type="text" name="title" value="<%= product ? product.title : '' %>" placeholder="e.g. Blox Fruits Pro Guide" required autofocus>
+    </label>
+
+    <label>Short summary <small class="hint">Shown on the game page.</small>
+      <input type="text" name="summary" value="<%= product ? product.summary : '' %>" placeholder="One line describing this product">
+    </label>
+
+    <label>Price <small class="hint">Optional — e.g. $9.99 or Free. Just text for now.</small>
+      <input type="text" name="price" value="<%= product ? product.price : '' %>" placeholder="$9.99">
+    </label>
+
+    <label>Cover image</label>
+    <div class="dropzone" id="dropzone">
+      <input type="file" name="image" id="fileInput" accept="image/*" hidden>
+      <div class="dropzone-inner">
+        <img id="preview" class="dropzone-preview" src="<%= product && product.image ? product.image : '' %>" alt="" style="<%= product && product.image ? '' : 'display:none' %>">
+        <div id="dropPrompt" class="dropzone-prompt" style="<%= product && product.image ? 'display:none' : '' %>">
+          <span class="dz-icon">⬆</span>
+          <p>Drop an image here or <span class="link">click to choose</span></p>
+          <small class="muted">Optional · up to 5MB</small>
+        </div>
+      </div>
+    </div>
+    <% if (product) { %><small class="hint">Leave empty to keep the current image.</small><% } %>
+
+    <label>Guide / information <small class="hint">The full content shown on the product page. Line breaks are kept.</small>
+      <textarea name="content" rows="14" placeholder="Write everything for this product here — the guide, steps, info, links..."><%= product ? product.content : '' %></textarea>
+    </label>
+
+    <div class="form-actions">
+      <button type="submit" class="btn btn-primary"><%= product ? 'Save changes' : 'Add product' %></button>
+      <a href="/game/<%= game.slug %>" class="btn btn-ghost">Cancel</a>
+    </div>
+  </form>
+</section>
+
+<%- include('../partials/footer') %>

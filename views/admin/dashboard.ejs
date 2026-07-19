@@ -1,0 +1,46 @@
+<% pageTitle = 'Admin' %>
+<%- include('../partials/header') %>
+
+<section class="page-head">
+  <div class="page-head-inner">
+    <div>
+      <nav class="crumbs">Admin</nav>
+      <h1>Admin Panel</h1>
+      <p class="muted">Manage games and products. Signed in as <%= user.email %>.</p>
+    </div>
+    <div class="page-head-actions">
+      <a href="/admin/games/new" class="btn btn-primary">+ Add game</a>
+    </div>
+  </div>
+</section>
+
+<section class="container">
+  <h2 class="admin-h2">Games</h2>
+  <% if (games.length === 0) { %>
+    <div class="empty"><p>No games yet.</p><a href="/admin/games/new" class="btn btn-primary">Add your first game</a></div>
+  <% } else { %>
+    <div class="admin-list">
+      <% games.forEach(function(g) { %>
+        <div class="admin-row">
+          <div class="admin-row-icon">
+            <% if (g.image) { %><img src="<%= g.image %>" alt=""><% } else { %><span><%= g.title.charAt(0).toUpperCase() %></span><% } %>
+          </div>
+          <div class="admin-row-main">
+            <a href="/game/<%= g.slug %>" class="admin-row-title"><%= g.title %></a>
+            <span class="muted">Products: <%= g.product_count %></span>
+          </div>
+          <div class="admin-row-actions">
+            <a href="/admin/games/<%= g.id %>/products/new" class="btn btn-sm btn-primary">+ Product</a>
+            <a href="/admin/games/<%= g.id %>/edit" class="btn btn-sm btn-ghost">Edit</a>
+            <form action="/admin/games/<%= g.id %>/delete" method="POST" class="inline"
+                  onsubmit="return confirm('Delete <%= g.title %> and ALL its products?');">
+              <button type="submit" class="btn btn-sm btn-danger">Delete</button>
+            </form>
+          </div>
+        </div>
+      <% }); %>
+    </div>
+  <% } %>
+</section>
+
+<%- include('../partials/footer') %>

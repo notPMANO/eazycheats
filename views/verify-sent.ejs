@@ -1,0 +1,21 @@
+<% pageTitle = 'Verify your email' %>
+<%- include('partials/header') %>
+
+<section class="auth-wrap">
+  <div class="auth-card">
+    <h1>Verify your email</h1>
+    <% if (link) { %>
+      <p class="muted">Email sending isn't set up yet, so use this link to verify <strong><%= email %></strong>:</p>
+      <div class="dev-note">
+        <p><strong>Dev mode:</strong> your verification link:</p>
+        <a href="<%= link %>" class="btn btn-primary btn-block">Verify my email</a>
+      </div>
+    <% } else { %>
+      <p class="muted">We've sent a verification link to <strong><%= email %></strong>. Open your inbox and click it to finish setting up your account.</p>
+      <p class="muted" style="font-size:13px">Didn't get it? Check your spam folder.</p>
+    <% } %>
+    <p class="auth-alt"><a href="/">Continue to site</a></p>
+  </div>
+</section>
+
+<%- include('partials/footer') %>
