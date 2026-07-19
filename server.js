@@ -162,12 +162,13 @@ trust(hostOf(process.env.RENDER_EXTERNAL_URL || ''));
 app.use((req, res, next) => {
   if (['GET', 'HEAD', 'OPTIONS'].includes(req.method)) return next();
   const origin = req.get('origin') || req.get('referer');
-  // If neither Origin nor Referer is present (some privacy setups strip them),
-  // allow it through: the SameSite=lax session cookie already blocks the actual
-  // cross-site attack, so this only affects requests that carry no header at all.
-  if (!origin) return next();
+  // Allow through when there's no usable Origin/Referer — missing, the literal
+  // "null" (privacy extensions and sandboxed contexts send this), or unparseable.
+  // The SameSite=lax session cookie is the real cross-site defense; this header
+  // check only adds a hard block for a *real, mismatched* origin (below).
+  if (!origin || origin === 'null') return next();
   let originHost;
-  try { originHost = new URL(origin).host; } catch { return res.status(403).render('403'); }
+  try { originHost = new URL(origin).host; } catch { return next(); }
 
   if (TRUSTED_HOSTS.size) {
     if (!TRUSTED_HOSTS.has(originHost)) return res.status(403).render('403');
