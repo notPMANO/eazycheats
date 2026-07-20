@@ -117,6 +117,34 @@ const sanitizeName = (username) =>
   username.toLowerCase().replace(/[^a-z0-9]/g, '').slice(0, 20) || 'user';
 
 // ---------- Free key generator ----------
+
+// The EazyCheats site exposes POST /api/keys to register a key for validation.
+const KEY_API_URL = process.env.KEY_API_URL || 'https://eazycheats.com/api/keys';
+
+// Register a generated key with the site's key API. Best-effort: never throws,
+// so a slow/down/not-yet-deployed API can't block issuing the key in Discord.
+async function registerKeyWithApi(key, hours, discordId) {
+  const secret = process.env.BOT_API_SECRET;
+  if (!secret) {
+    console.warn('BOT_API_SECRET not set — key not registered with the API (Discord-only).');
+    return;
+  }
+  try {
+    const res = await fetch(KEY_API_URL, {
+      method: 'POST',
+      headers: { 'content-type': 'application/json', 'x-api-key': secret },
+      body: JSON.stringify({ key, hours, discord_id: discordId, note: 'discord free key' }),
+    });
+    if (res.ok) console.log(`Registered key with API: ${key}`);
+    else {
+      const body = await res.text().catch(() => '');
+      console.error(`Key API returned ${res.status}: ${body.slice(0, 200)}`);
+    }
+  } catch (err) {
+    console.error('Key API call failed:', err.message);
+  }
+}
+
 async function requestFreeKey(interaction) {
   const guild = interaction.guild;
   const opener = interaction.user;
@@ -156,6 +184,9 @@ async function requestFreeKey(interaction) {
   const key = generateKey();
   const issuedAt = Date.now();
   const expiresAt = issuedAt + FREE_KEY_TTL_HOURS * 60 * 60 * 1000;
+
+  // Register the key with the site's key API so it actually validates (best-effort).
+  await registerKeyWithApi(key, FREE_KEY_TTL_HOURS, opener.id);
 
   // Give the key to the user in their ticket.
   await channel.send(buildKeyTicketMessage(key, opener.id, expiresAt));
