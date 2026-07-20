@@ -8,3 +8,4 @@ npm-debug.log*
 # its installed deps or its local secrets file.
 discord-bot/node_modules/
 discord-bot/.env
+discord-bot/data/

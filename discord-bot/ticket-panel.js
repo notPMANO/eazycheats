@@ -9,20 +9,23 @@ function buildTicketPanel() {
     .setColor(0x5865f2)
     .setTitle('🎫 EazyCheats Support')
     .setDescription(
-      'Need help? Click the button below to open a **private ticket**.\n\n' +
-      'Only you and our staff will be able to see it.\n\n' +
-      '**Before opening a ticket:**\n' +
-      '• Check <#faq> and <#support-info>\n' +
-      '• Have your order/username ready\n' +
-      '• Be patient — staff will respond as soon as they can.'
+      'Pick an option below to open your own **private ticket**.\n\n' +
+      '🆘 **Request Help** — talk to our staff about any issue.\n' +
+      '🔑 **Request Free Key** — get an auto-generated free key (valid 4 hours).\n\n' +
+      'Only you and our staff can see your ticket. Check <#faq> and <#support-info> first!'
     )
     .setFooter({ text: 'EazyCheats — We make you better at games' });
 
   const row = new ActionRowBuilder().addComponents(
     new ButtonBuilder()
       .setCustomId('ticket_open')
-      .setLabel('Open Ticket')
-      .setEmoji('🎫')
+      .setLabel('Request Help')
+      .setEmoji('🆘')
+      .setStyle(ButtonStyle.Primary),
+    new ButtonBuilder()
+      .setCustomId('freekey_request')
+      .setLabel('Request Free Key')
+      .setEmoji('🔑')
       .setStyle(ButtonStyle.Success)
   );
 

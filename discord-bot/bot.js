@@ -8,10 +8,14 @@ const {
   EmbedBuilder, AttachmentBuilder, ApplicationCommandOptionType,
 } = require('discord.js');
 const {
-  TICKET_STAFF_ROLES, VERIFIED_ROLE, TICKET_CATEGORY, TICKET_LOG_CHANNEL, WELCOME_CHANNEL,
+  TICKET_STAFF_ROLES, MOD_ROLES, VERIFIED_ROLE, TICKET_CATEGORY, TICKET_LOG_CHANNEL,
+  WELCOME_CHANNEL, FREE_KEY_TTL_HOURS, FREE_KEY_SAFE_CHANNEL, FREE_KEY_TICKET_CATEGORY,
 } = require('./config');
 const { buildTicketWelcome } = require('./ticket-panel');
 const { buildWelcomeGreeting } = require('./welcome');
+const {
+  generateKey, addKey, updateKey, getKeys, buildKeyTicketMessage, buildSafeEntry,
+} = require('./freekey');
 
 const { DISCORD_TOKEN, GUILD_ID } = process.env;
 
@@ -58,6 +62,15 @@ client.once('clientReady', async () => {
   } catch (e) {
     console.error('   Could not register slash commands:', e.message);
   }
+
+  // Re-arm free-key expiry timers that were saved before the last restart.
+  let armed = 0;
+  for (const rec of getKeys()) {
+    if (rec.status === 'expired') continue;
+    if (rec.expiresAt <= Date.now()) expireKey(rec);
+    else { scheduleExpiry(rec); armed++; }
+  }
+  if (armed) console.log(`   Re-armed ${armed} free-key timer(s).\n`);
 });
 
 client.on('interactionCreate', async (interaction) => {
@@ -65,6 +78,7 @@ client.on('interactionCreate', async (interaction) => {
     if (interaction.isButton()) {
       if (interaction.customId === 'verify_agree') return verifyMember(interaction);
       if (interaction.customId === 'ticket_open') return openTicket(interaction);
+      if (interaction.customId === 'freekey_request') return requestFreeKey(interaction);
       if (interaction.customId === 'ticket_close') return closeTicket(interaction);
     } else if (interaction.isChatInputCommand()) {
       if (interaction.commandName === 'add') return ticketAddRemove(interaction, true);
@@ -98,6 +112,101 @@ async function verifyMember(interaction) {
 // ---------- Tickets ----------
 const isTicketChannel = (ch) => ch && ch.topic && ch.topic.startsWith('ticket-owner:');
 const ticketOwnerId = (ch) => (isTicketChannel(ch) ? ch.topic.split(':')[1] : null);
+
+const sanitizeName = (username) =>
+  username.toLowerCase().replace(/[^a-z0-9]/g, '').slice(0, 20) || 'user';
+
+// ---------- Free key generator ----------
+async function requestFreeKey(interaction) {
+  const guild = interaction.guild;
+  const opener = interaction.user;
+  await interaction.deferReply(EPHEMERAL);
+
+  // Only the requester + mods can see a free-key ticket.
+  const modRoles = guild.roles.cache.filter((r) => MOD_ROLES.includes(r.name));
+  const category = guild.channels.cache.find(
+    (c) => c.type === ChannelType.GuildCategory && c.name === FREE_KEY_TICKET_CATEGORY
+  );
+
+  const overwrites = [
+    { id: guild.roles.everyone.id, deny: [PermissionFlagsBits.ViewChannel] },
+    {
+      id: opener.id,
+      allow: [PermissionFlagsBits.ViewChannel, PermissionFlagsBits.SendMessages, PermissionFlagsBits.ReadMessageHistory],
+    },
+    ...modRoles.map((r) => ({
+      id: r.id,
+      allow: [
+        PermissionFlagsBits.ViewChannel, PermissionFlagsBits.SendMessages,
+        PermissionFlagsBits.ManageMessages, PermissionFlagsBits.ReadMessageHistory,
+      ],
+    })),
+  ];
+
+  const channel = await guild.channels.create({
+    name: `freekey-${sanitizeName(opener.username)}`,
+    type: ChannelType.GuildText,
+    parent: category ? category.id : undefined,
+    topic: `ticket-owner:${opener.id}`,
+    permissionOverwrites: overwrites,
+    reason: `Free key requested by ${opener.tag}`,
+  });
+
+  // Generate the key + timing.
+  const key = generateKey();
+  const issuedAt = Date.now();
+  const expiresAt = issuedAt + FREE_KEY_TTL_HOURS * 60 * 60 * 1000;
+
+  // Give the key to the user in their ticket.
+  await channel.send(buildKeyTicketMessage(key, opener.id, expiresAt));
+
+  // Log it to the mod-only free key safe.
+  const safe = guild.channels.cache.find(
+    (c) => c.type === ChannelType.GuildText && c.name === FREE_KEY_SAFE_CHANNEL
+  );
+  let safeMsg = null;
+  if (safe) {
+    safeMsg = await safe.send(buildSafeEntry({
+      key, userId: opener.id, ticketChannelId: channel.id,
+      issuedAtMs: issuedAt, expiresAtMs: expiresAt, status: 'active',
+    })).catch(() => null);
+  }
+
+  const rec = {
+    key, userId: opener.id, ticketChannelId: channel.id,
+    safeChannelId: safe ? safe.id : null, safeMessageId: safeMsg ? safeMsg.id : null,
+    issuedAt, expiresAt, status: 'active',
+  };
+  addKey(rec);
+  scheduleExpiry(rec);
+
+  await interaction.editReply({ content: `✅ Your free key is ready in <#${channel.id}>!` });
+}
+
+function scheduleExpiry(rec) {
+  const delay = Math.max(0, rec.expiresAt - Date.now());
+  setTimeout(() => expireKey(rec), delay);
+}
+
+async function expireKey(rec) {
+  try {
+    updateKey(rec.key, { status: 'expired' });
+    if (rec.safeChannelId && rec.safeMessageId) {
+      const ch = await client.channels.fetch(rec.safeChannelId).catch(() => null);
+      const msg = ch && await ch.messages.fetch(rec.safeMessageId).catch(() => null);
+      if (msg) {
+        await msg.edit(buildSafeEntry({
+          key: rec.key, userId: rec.userId, ticketChannelId: rec.ticketChannelId,
+          issuedAtMs: rec.issuedAt, expiresAtMs: rec.expiresAt, status: 'expired',
+        })).catch(() => {});
+      }
+    }
+    const tch = await client.channels.fetch(rec.ticketChannelId).catch(() => null);
+    if (tch) tch.send('⏰ This free key has now **expired**.').catch(() => {});
+  } catch (err) {
+    console.error('expireKey failed:', err.message);
+  }
+}
 
 async function openTicket(interaction) {
   const guild = interaction.guild;

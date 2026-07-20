@@ -9,7 +9,8 @@ const {
   Client, GatewayIntentBits, PermissionFlagsBits, ChannelType,
 } = require('discord.js');
 const {
-  ROLES, STAFF_ROLES, TICKET_STAFF_ROLES, RULES, CATEGORIES, TICKET_CATEGORY,
+  ROLES, STAFF_ROLES, TICKET_STAFF_ROLES, MOD_ROLES, RULES, CATEGORIES,
+  TICKET_CATEGORY, FREE_KEY_TICKET_CATEGORY,
 } = require('./config');
 const { buildTicketPanel } = require('./ticket-panel');
 const { buildVerifyPanel } = require('./verify-panel');
@@ -71,6 +72,7 @@ client.once('clientReady', async () => {
 
     const staffRoleObjs = STAFF_ROLES.map((n) => roleByName[n]).filter(Boolean);
     const ticketStaffObjs = TICKET_STAFF_ROLES.map((n) => roleByName[n]).filter(Boolean);
+    const modRoleObjs = MOD_ROLES.map((n) => roleByName[n]).filter(Boolean);
     const freeUser = roleByName['Free User'];
     const customer = roleByName['Customer'];
 
@@ -105,6 +107,12 @@ client.once('clientReady', async () => {
       if (access === 'ticketstaff') {
         // ONLY Support + Moderator — not all staff (Dev is excluded).
         for (const sr of ticketStaffObjs) ow.push({ id: sr.id, allow: STAFF_ALLOW });
+        return ow;
+      }
+
+      if (access === 'modonly') {
+        // ONLY the "mods" (Moderator) — the key system.
+        for (const sr of modRoleObjs) ow.push({ id: sr.id, allow: STAFF_ALLOW });
         return ow;
       }
 
@@ -181,6 +189,17 @@ client.once('clientReady', async () => {
 
     // Category that will hold live ticket channels (Support + Moderator only).
     await ensureCategory(TICKET_CATEGORY, 'ticketstaff');
+    // Category that holds live free-key tickets (mods only).
+    await ensureCategory(FREE_KEY_TICKET_CATEGORY, 'modonly');
+
+    // Pin the key-system categories to the very bottom of the channel list.
+    async function moveToBottom(name) {
+      const fresh = await guild.channels.fetch();
+      const cat = fresh.find((c) => c && c.type === ChannelType.GuildCategory && c.name === name);
+      if (cat) { await cat.setPosition(999).catch(() => {}); console.log(`  ~ pinned to bottom: ${name}`); }
+    }
+    for (const catDef of CATEGORIES) if (catDef.bottom) await moveToBottom(catDef.name);
+    await moveToBottom(FREE_KEY_TICKET_CATEGORY); // free-key tickets sit at the very bottom
 
     // Helpers to dedupe an existing panel by button id or by embed title.
     const hasButton = (id) => (m) =>
@@ -220,7 +239,21 @@ client.once('clientReady', async () => {
 
     await ensurePanel(welcomeInfoChannel, hasEmbedTitle('Welcome to EazyCheats!'), () => buildWelcomeInfo(verifyPanelChannel), 'welcome intro');
     await ensurePanel(verifyPanelChannel, hasButton('verify_agree'), () => buildVerifyPanel(RULES), 'rules gate panel');
-    await ensurePanel(ticketPanelChannel, hasButton('ticket_open'), () => buildTicketPanel(), 'ticket panel');
+
+    // The ticket panel gained a second button (Request Free Key) — remove any
+    // old single-button panel so it gets re-posted with both buttons.
+    if (ticketPanelChannel) {
+      const msgs = await ticketPanelChannel.messages.fetch({ limit: 20 }).catch(() => null);
+      if (msgs) {
+        for (const m of msgs.values()) {
+          if (m.author.id === client.user.id && hasButton('ticket_open')(m) && !hasButton('freekey_request')(m)) {
+            await m.delete().catch(() => {});
+            console.log('  ~ removed outdated ticket panel (single button)');
+          }
+        }
+      }
+    }
+    await ensurePanel(ticketPanelChannel, hasButton('freekey_request'), () => buildTicketPanel(), 'ticket panel');
 
     console.log('\n✅ Server setup complete!\n');
     console.log('   New members are greeted in #welcome and must click "Agree to the Rules" in #verify.');
