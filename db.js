@@ -73,6 +73,16 @@ db.exec(`
     last_used  TEXT,
     created_at TEXT NOT NULL DEFAULT (datetime('now'))
   );
+
+  -- Every HWID a key has been used on. Lets us track sharing and ping the owner
+  -- when a new device shows up, without necessarily blocking the key.
+  CREATE TABLE IF NOT EXISTS key_hwids (
+    id         INTEGER PRIMARY KEY AUTOINCREMENT,
+    key_id     INTEGER NOT NULL REFERENCES keys(id) ON DELETE CASCADE,
+    hwid       TEXT NOT NULL,
+    first_seen TEXT NOT NULL DEFAULT (datetime('now')),
+    UNIQUE(key_id, hwid)
+  );
 `);
 
 // --- Migrations: add columns to existing databases if they're missing ---

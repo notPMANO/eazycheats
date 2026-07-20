@@ -307,14 +307,31 @@ function findBotFreeKey(key) {
   } catch { return null; }
 }
 
-// Validate a key + HWID. Binds the HWID on first use, and on a mismatch disables
-// the key and fires a leak alert. Returns { ok, reason }.
+// All HWIDs a key has ever been used on (oldest first).
+function allHwidsFor(keyId) {
+  return db.prepare('SELECT hwid FROM key_hwids WHERE key_id = ? ORDER BY first_seen, id')
+    .all(keyId).map((r) => r.hwid);
+}
+
+// Ping the server owner (in the bot's #key-alerts channel) that a key was used on
+// a new device. Safe anytime: the bot no-ops if it isn't ready and never throws.
+function alertKeyUsed(key, hwid, allHwids) {
+  try { require('./discord-bot/bot').keyUsedAlert({ key, hwid, allHwids }); } catch {}
+}
+
+// Validate a key + HWID.
+//  - Records every HWID a key is used on (key_hwids) and pings the owner when a
+//    2nd+ device appears ("ping instead of stop") — the key keeps working.
+//  - bind_hwid = 1 → hard lock: the first device binds and any other device is
+//    rejected (but the key is NOT auto-disabled; the owner is pinged and can
+//    /revoke). bind_hwid = 0 → validates on any device, tracked + pinged only.
+// Returns { ok, reason }.
 function validateKeyAuth(key, hwid) {
   if (!key || !hwid) return { ok: false, reason: 'Missing key or HWID.' };
   let rec = db.prepare('SELECT * FROM keys WHERE key = ?').get(key);
 
   // Not in the DB? It may be a Discord free key — accept it and import it into the
-  // key system on first use so it gets HWID-lock + leak detection like any key.
+  // key system on first use so it's tracked like any other key.
   if (!rec) {
     const fk = findBotFreeKey(key);
     if (!fk) return { ok: false, reason: 'Invalid key.' };
@@ -331,19 +348,27 @@ function validateKeyAuth(key, hwid) {
   if (rec.expires_at && new Date(rec.expires_at).getTime() < Date.now()) {
     return { ok: false, reason: 'This key has expired. Generate a new one.' };
   }
+
+  // --- HWID tracking (every key) ---
+  const seenBefore = db.prepare('SELECT 1 FROM key_hwids WHERE key_id = ? AND hwid = ?').get(rec.id, hwid);
+  const priorCount = db.prepare('SELECT COUNT(*) AS n FROM key_hwids WHERE key_id = ?').get(rec.id).n;
+  if (!seenBefore) {
+    db.prepare('INSERT OR IGNORE INTO key_hwids (key_id, hwid) VALUES (?, ?)').run(rec.id, hwid);
+  }
+  // A 2nd+ distinct device (not the very first the key ever ran on) pings the owner.
+  if (!seenBefore && priorCount > 0) {
+    alertKeyUsed(rec.key, hwid, allHwidsFor(rec.id));
+  }
+  db.prepare("UPDATE keys SET last_used = datetime('now') WHERE id = ?").run(rec.id);
+
+  // --- Hard lock (bind_hwid = 1): bind first device, reject any other ---
   if (rec.bind_hwid) {
     if (!rec.hwid) {
-      db.prepare("UPDATE keys SET hwid = ?, last_used = datetime('now') WHERE id = ?").run(hwid, rec.id);
+      db.prepare('UPDATE keys SET hwid = ? WHERE id = ?').run(hwid, rec.id);
       notifyDiscord(`🔑 Key \`${rec.key}\`${rec.note ? ' (' + rec.note + ')' : ''} activated on HWID \`${hwid}\``);
     } else if (rec.hwid !== hwid) {
-      db.prepare('UPDATE keys SET disabled = 1 WHERE id = ?').run(rec.id);
-      notifyDiscord(`🚨 **LEAK** — key \`${rec.key}\`${rec.note ? ' (' + rec.note + ')' : ''} used on a NEW HWID \`${hwid}\` (bound to \`${rec.hwid}\`). Key **disabled**.`);
-      return { ok: false, reason: 'This key is locked to another device and has been disabled.' };
-    } else {
-      db.prepare("UPDATE keys SET last_used = datetime('now') WHERE id = ?").run(rec.id);
+      return { ok: false, reason: 'This key is locked to another device.' };
     }
-  } else {
-    db.prepare("UPDATE keys SET last_used = datetime('now') WHERE id = ?").run(rec.id);
   }
   return { ok: true };
 }
@@ -435,6 +460,27 @@ app.post('/api/keys/revoke', express.json(), (req, res) => {
   if (!key) return res.status(400).json({ ok: false, error: 'Missing key.' });
   const info = db.prepare('UPDATE keys SET disabled = 1 WHERE key = ?').run(key);
   return res.json({ ok: true, revoked: info.changes > 0 });
+});
+
+// Toggle a key's HWID lock. bind_hwid:true → lock to the first device; false →
+// unlock AND clear its bound device so it re-binds fresh if locked again later.
+app.post('/api/keys/hwid', express.json(), (req, res) => {
+  const secret = process.env.BOT_API_SECRET;
+  if (!secret) return res.status(503).json({ ok: false, error: 'Key API not configured.' });
+  const provided = req.get('x-api-key') || (req.get('authorization') || '').replace(/^Bearer\s+/i, '');
+  if (provided !== secret) return res.status(401).json({ ok: false, error: 'Unauthorized.' });
+  const key = req.body && req.body.key ? String(req.body.key).trim() : '';
+  if (!key) return res.status(400).json({ ok: false, error: 'Missing key.' });
+  const rec = db.prepare('SELECT id FROM keys WHERE key = ?').get(key);
+  if (!rec) return res.status(404).json({ ok: false, error: 'Key not found.' });
+
+  const bind = (req.body.bind_hwid === true || req.body.bind_hwid === 1 || req.body.bind_hwid === '1') ? 1 : 0;
+  if (bind) {
+    db.prepare('UPDATE keys SET bind_hwid = 1 WHERE id = ?').run(rec.id);
+  } else {
+    db.prepare('UPDATE keys SET bind_hwid = 0, hwid = NULL WHERE id = ?').run(rec.id);
+  }
+  return res.json({ ok: true, key, bind_hwid: bind });
 });
 
 // ============================================================
