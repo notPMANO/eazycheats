@@ -389,6 +389,55 @@ app.get('/s/:slug', (req, res) => {
 });
 
 // ============================================================
+//  BOT API — the Discord bot registers each key it generates here, so the
+//  loader's key check (which reads the DB) accepts it. One source of truth.
+//  Auth: shared secret in the BOT_API_SECRET env var, sent as `x-api-key`
+//  (or `Authorization: Bearer <secret>`). With no secret set, the route is
+//  disabled (fail closed) so it can never become an open key-minting endpoint.
+// ============================================================
+app.post('/api/keys', express.json(), (req, res) => {
+  const secret = process.env.BOT_API_SECRET;
+  if (!secret) return res.status(503).json({ ok: false, error: 'Key API not configured.' });
+  const provided = req.get('x-api-key') || (req.get('authorization') || '').replace(/^Bearer\s+/i, '');
+  if (provided !== secret) return res.status(401).json({ ok: false, error: 'Unauthorized.' });
+
+  const body = req.body || {};
+  const note = String(body.note || 'discord').trim().slice(0, 200);
+  const discordId = body.discord_id ? String(body.discord_id).slice(0, 40) : null;
+  // Lock to first device by default; pass bind_hwid:false for a shared/test key.
+  const bindHwid = (body.bind_hwid === false || body.bind_hwid === 0) ? 0 : 1;
+  // Default 4h lifetime (matches the bot's free keys); hours:0 = permanent.
+  const hours = body.hours == null ? 4 : parseFloat(body.hours);
+  const expires = hours > 0 ? new Date(Date.now() + hours * 3600 * 1000).toISOString() : null;
+
+  // Use the key the bot supplies, or mint one and return it if it didn't send one.
+  let key = body.key ? String(body.key).trim().slice(0, 100) : null;
+  if (!key) {
+    do { key = genKeyString(); } while (db.prepare('SELECT 1 FROM keys WHERE key = ?').get(key));
+  }
+  // Don't silently overwrite an existing key — report the collision instead.
+  if (db.prepare('SELECT id FROM keys WHERE key = ?').get(key)) {
+    return res.status(409).json({ ok: false, error: 'Key already exists.', key });
+  }
+
+  db.prepare('INSERT INTO keys (key, note, discord_id, bind_hwid, expires_at) VALUES (?, ?, ?, ?, ?)')
+    .run(key, note, discordId, bindHwid, expires);
+  return res.json({ ok: true, key, expires_at: expires, bind_hwid: bindHwid });
+});
+
+// Revoke (disable) a key early — e.g. the bot cleaning up on demand.
+app.post('/api/keys/revoke', express.json(), (req, res) => {
+  const secret = process.env.BOT_API_SECRET;
+  if (!secret) return res.status(503).json({ ok: false, error: 'Key API not configured.' });
+  const provided = req.get('x-api-key') || (req.get('authorization') || '').replace(/^Bearer\s+/i, '');
+  if (provided !== secret) return res.status(401).json({ ok: false, error: 'Unauthorized.' });
+  const key = req.body && req.body.key ? String(req.body.key).trim() : '';
+  if (!key) return res.status(400).json({ ok: false, error: 'Missing key.' });
+  const info = db.prepare('UPDATE keys SET disabled = 1 WHERE key = ?').run(key);
+  return res.json({ ok: true, revoked: info.changes > 0 });
+});
+
+// ============================================================
 //  AUTH
 // ============================================================
 app.get('/login', (req, res) => {
