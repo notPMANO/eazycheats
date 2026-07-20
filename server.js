@@ -87,7 +87,7 @@ app.use(helmet({
 }));
 
 // ---------- Body + static ----------
-app.use(express.urlencoded({ extended: true, limit: '1mb' }));
+app.use(express.urlencoded({ extended: true, limit: '4mb' })); // room for pasting large scripts
 app.use(express.static(path.join(__dirname, 'public')));
 // Uploads may live outside /public (on the data disk), so serve them explicitly.
 app.use('/uploads', express.static(UPLOAD_DIR));
@@ -263,6 +263,91 @@ function deleteUpload(publicPath) {
   fs.promises.unlink(abs).catch(() => {});
 }
 
+// ---------- Scripts + keys (hosted Lua + access control) ----------
+function uniqueScriptSlug(base, exceptId) {
+  let slug = slugify(base), i = 2;
+  for (;;) {
+    const row = db.prepare('SELECT id FROM scripts WHERE slug = ?').get(slug);
+    if (!row || row.id === exceptId) return slug;
+    slug = slugify(base) + '-' + i++;
+  }
+}
+
+function genKeyString() {
+  const b = crypto.randomBytes(9).toString('hex').toUpperCase();
+  return `EZ-${b.slice(0, 4)}-${b.slice(4, 8)}-${b.slice(8, 12)}-${b.slice(12, 18)}`;
+}
+
+// Fire a Discord alert (activation / leak) via a webhook, if LEAK_WEBHOOK is set.
+function notifyDiscord(content) {
+  const url = process.env.LEAK_WEBHOOK;
+  if (!url) return;
+  fetch(url, {
+    method: 'POST',
+    headers: { 'content-type': 'application/json' },
+    body: JSON.stringify({ content }),
+  }).catch(() => {});
+}
+
+// Lua returned when access is denied. Begins with "--@DENY:" so the loader can
+// detect a refusal, and also pops an in-game notification if run directly.
+function denyLua(reason) {
+  const safe = String(reason).replace(/\\/g, '\\\\').replace(/"/g, '\\"').replace(/[\r\n]+/g, ' ');
+  return `--@DENY:${safe}\nlocal m="${safe}"\npcall(function() game:GetService("StarterGui"):SetCore("SendNotification",{Title="EazyCheats",Text=m,Duration=8}) end)\nwarn("[EazyCheats] "..m)\n`;
+}
+
+// The Discord bot issues free keys into a JSON file (freekeys.json) rather than
+// the DB. Look one up so bot-issued keys also work with the loader.
+function findBotFreeKey(key) {
+  try {
+    const dir = config.DATA_DIR || path.join(__dirname, 'data');
+    const store = JSON.parse(fs.readFileSync(path.join(dir, 'freekeys.json'), 'utf8'));
+    if (!store || !Array.isArray(store.keys)) return null;
+    return store.keys.find((k) => k.key === key) || null;
+  } catch { return null; }
+}
+
+// Validate a key + HWID. Binds the HWID on first use, and on a mismatch disables
+// the key and fires a leak alert. Returns { ok, reason }.
+function validateKeyAuth(key, hwid) {
+  if (!key || !hwid) return { ok: false, reason: 'Missing key or HWID.' };
+  let rec = db.prepare('SELECT * FROM keys WHERE key = ?').get(key);
+
+  // Not in the DB? It may be a Discord free key — accept it and import it into the
+  // key system on first use so it gets HWID-lock + leak detection like any key.
+  if (!rec) {
+    const fk = findBotFreeKey(key);
+    if (!fk) return { ok: false, reason: 'Invalid key.' };
+    if (fk.expiresAtMs && fk.expiresAtMs < Date.now()) {
+      return { ok: false, reason: 'This key has expired. Get a fresh one from Discord.' };
+    }
+    const expiresIso = fk.expiresAtMs ? new Date(fk.expiresAtMs).toISOString() : null;
+    db.prepare('INSERT OR IGNORE INTO keys (key, note, bind_hwid, expires_at) VALUES (?, ?, 1, ?)')
+      .run(key, 'discord free key', expiresIso);
+    rec = db.prepare('SELECT * FROM keys WHERE key = ?').get(key);
+    if (!rec) return { ok: false, reason: 'Invalid key.' };
+  }
+  if (rec.disabled) return { ok: false, reason: 'This key has been disabled.' };
+  if (rec.expires_at && new Date(rec.expires_at).getTime() < Date.now()) {
+    return { ok: false, reason: 'This key has expired. Generate a new one.' };
+  }
+  if (rec.bind_hwid) {
+    if (!rec.hwid) {
+      db.prepare("UPDATE keys SET hwid = ?, last_used = datetime('now') WHERE id = ?").run(hwid, rec.id);
+      notifyDiscord(`🔑 Key \`${rec.key}\`${rec.note ? ' (' + rec.note + ')' : ''} activated on HWID \`${hwid}\``);
+    } else if (rec.hwid !== hwid) {
+      db.prepare('UPDATE keys SET disabled = 1 WHERE id = ?').run(rec.id);
+      notifyDiscord(`🚨 **LEAK** — key \`${rec.key}\`${rec.note ? ' (' + rec.note + ')' : ''} used on a NEW HWID \`${hwid}\` (bound to \`${rec.hwid}\`). Key **disabled**.`);
+      return { ok: false, reason: 'This key is locked to another device and has been disabled.' };
+    } else {
+      db.prepare("UPDATE keys SET last_used = datetime('now') WHERE id = ?").run(rec.id);
+    }
+  } else {
+    db.prepare("UPDATE keys SET last_used = datetime('now') WHERE id = ?").run(rec.id);
+  }
+  return { ok: true };
+}
+
 // ============================================================
 //  PUBLIC ROUTES
 // ============================================================
@@ -286,6 +371,21 @@ app.get('/game/:gameSlug/:productSlug', (req, res) => {
     .get(req.params.productSlug, game.id);
   if (!product) return res.status(404).render('404');
   res.render('product', { game, product });
+});
+
+// ---------- Hosted scripts (raw Lua for game:HttpGet) ----------
+// GET /s/<slug>  → returns the script as raw text.
+// If the script is "protected", a valid ?key=&hwid= is required; otherwise it
+// returns a deny stub (still valid Lua) instead of the content.
+app.get('/s/:slug', (req, res) => {
+  const script = db.prepare('SELECT * FROM scripts WHERE slug = ?').get(req.params.slug);
+  res.type('text/plain; charset=utf-8');
+  res.set('Cache-Control', 'no-store');
+  if (!script) return res.status(404).send('-- script not found');
+  if (!script.protected) return res.send(script.content);
+  const check = validateKeyAuth(String(req.query.key || ''), String(req.query.hwid || ''));
+  if (!check.ok) return res.send(denyLua(check.reason));
+  return res.send(script.content);
 });
 
 // ============================================================
@@ -593,6 +693,81 @@ app.post('/admin/products/:id/delete', requireAdmin, (req, res) => {
     return res.redirect(`/game/${game.slug}`);
   }
   res.redirect('/admin');
+});
+
+// ---- Scripts (hosted Lua) ----
+app.get('/admin/scripts', requireAdmin, (req, res) => {
+  const scripts = db.prepare('SELECT * FROM scripts ORDER BY id DESC').all();
+  res.render('admin/scripts', { scripts, base: baseUrl(req) });
+});
+app.get('/admin/scripts/new', requireAdmin, (req, res) => {
+  res.render('admin/script-form', { script: null });
+});
+app.post('/admin/scripts', requireAdmin, (req, res) => {
+  const name = String(req.body.name || '').trim();
+  if (!name) { flash(req, 'error', 'Script needs a name.'); return res.redirect('/admin/scripts/new'); }
+  const slug = uniqueScriptSlug(req.body.slug ? String(req.body.slug) : name);
+  db.prepare('INSERT INTO scripts (slug, name, content, protected) VALUES (?, ?, ?, ?)')
+    .run(slug, name, String(req.body.content || ''), req.body.protected ? 1 : 0);
+  flash(req, 'success', `Created script "${name}".`);
+  res.redirect('/admin/scripts');
+});
+app.get('/admin/scripts/:id/edit', requireAdmin, (req, res) => {
+  const script = db.prepare('SELECT * FROM scripts WHERE id = ?').get(req.params.id);
+  if (!script) return res.status(404).render('404');
+  res.render('admin/script-form', { script });
+});
+app.post('/admin/scripts/:id', requireAdmin, (req, res) => {
+  const script = db.prepare('SELECT * FROM scripts WHERE id = ?').get(req.params.id);
+  if (!script) return res.status(404).render('404');
+  const name = String(req.body.name || '').trim() || script.name;
+  const slug = uniqueScriptSlug(req.body.slug ? String(req.body.slug) : name, script.id);
+  db.prepare("UPDATE scripts SET name = ?, slug = ?, content = ?, protected = ?, updated_at = datetime('now') WHERE id = ?")
+    .run(name, slug, String(req.body.content || ''), req.body.protected ? 1 : 0, script.id);
+  flash(req, 'success', 'Script saved.');
+  res.redirect('/admin/scripts');
+});
+app.post('/admin/scripts/:id/delete', requireAdmin, (req, res) => {
+  db.prepare('DELETE FROM scripts WHERE id = ?').run(req.params.id);
+  flash(req, 'success', 'Script deleted.');
+  res.redirect('/admin/scripts');
+});
+
+// ---- Keys ----
+app.get('/admin/keys', requireAdmin, (req, res) => {
+  const keys = db.prepare('SELECT * FROM keys ORDER BY id DESC').all();
+  res.render('admin/keys', { keys });
+});
+app.post('/admin/keys', requireAdmin, (req, res) => {
+  const note = String(req.body.note || '').trim();
+  const hours = parseFloat(req.body.hours || '0');
+  const expires = hours > 0 ? new Date(Date.now() + hours * 3600 * 1000).toISOString() : null;
+  let key;
+  do { key = genKeyString(); } while (db.prepare('SELECT 1 FROM keys WHERE key = ?').get(key));
+  db.prepare('INSERT INTO keys (key, note, bind_hwid, expires_at) VALUES (?, ?, ?, ?)')
+    .run(key, note, req.body.bind_hwid ? 1 : 0, expires);
+  flash(req, 'success', `Generated key ${key}`);
+  res.redirect('/admin/keys');
+});
+app.post('/admin/keys/:id/disable', requireAdmin, (req, res) => {
+  db.prepare('UPDATE keys SET disabled = 1 WHERE id = ?').run(req.params.id);
+  flash(req, 'success', 'Key disabled.');
+  res.redirect('/admin/keys');
+});
+app.post('/admin/keys/:id/enable', requireAdmin, (req, res) => {
+  db.prepare('UPDATE keys SET disabled = 0 WHERE id = ?').run(req.params.id);
+  flash(req, 'success', 'Key re-enabled.');
+  res.redirect('/admin/keys');
+});
+app.post('/admin/keys/:id/reset', requireAdmin, (req, res) => {
+  db.prepare('UPDATE keys SET hwid = NULL, disabled = 0 WHERE id = ?').run(req.params.id);
+  flash(req, 'success', 'Key HWID reset — it can bind to a new device.');
+  res.redirect('/admin/keys');
+});
+app.post('/admin/keys/:id/delete', requireAdmin, (req, res) => {
+  db.prepare('DELETE FROM keys WHERE id = ?').run(req.params.id);
+  flash(req, 'success', 'Key deleted.');
+  res.redirect('/admin/keys');
 });
 
 // ---------- Errors ----------

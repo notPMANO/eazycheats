@@ -260,3 +260,9 @@ a.user-chip:hover { border-color: var(--accent); color: var(--accent); }
   .admin-row { flex-wrap: wrap; }
   .admin-row-actions { margin-left: 0; width: 100%; }
 }
+
+/* Checkbox row (admin script/key forms) */
+.checkrow { display: flex; align-items: center; gap: 0.6rem; flex-direction: row; cursor: pointer; }
+.checkrow input[type="checkbox"] { width: 1.05rem; height: 1.05rem; margin: 0; flex: 0 0 auto; accent-color: var(--accent, #6c5ce7); }
+.checkrow span { font-weight: 500; }
+.form.card-form textarea[spellcheck="false"] { font-family: ui-monospace, Menlo, Consolas, monospace; font-size: 0.82rem; line-height: 1.45; }

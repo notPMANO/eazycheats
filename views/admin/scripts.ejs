@@ -1,0 +1,43 @@
+<% pageTitle = 'Scripts' %>
+<%- include('../partials/header') %>
+
+<section class="page-head">
+  <div class="page-head-inner">
+    <div>
+      <nav class="crumbs"><a href="/admin">Admin</a> <span>/</span> Scripts</nav>
+      <h1>Scripts</h1>
+      <p class="muted">Hosted Lua, served raw at <code><%= base %>/s/&lt;slug&gt;</code>. Mark a script <strong>protected</strong> to require a valid key.</p>
+    </div>
+    <div class="page-head-actions">
+      <a href="/admin/keys" class="btn btn-ghost">Keys</a>
+      <a href="/admin/scripts/new" class="btn btn-primary">+ New script</a>
+    </div>
+  </div>
+</section>
+
+<section class="container">
+  <% if (scripts.length === 0) { %>
+    <div class="empty"><p>No scripts yet.</p><a href="/admin/scripts/new" class="btn btn-primary">Create your first script</a></div>
+  <% } else { %>
+    <div class="admin-list">
+      <% scripts.forEach(function(s) { %>
+        <div class="admin-row">
+          <div class="admin-row-main">
+            <span class="admin-row-title"><%= s.name %></span>
+            <span class="muted"><%= base %>/s/<%= s.slug %> · <%= s.protected ? 'protected (key required)' : 'public' %></span>
+          </div>
+          <div class="admin-row-actions">
+            <a href="/s/<%= s.slug %>" target="_blank" rel="noopener" class="btn btn-sm btn-ghost">Raw</a>
+            <a href="/admin/scripts/<%= s.id %>/edit" class="btn btn-sm btn-ghost">Edit</a>
+            <form action="/admin/scripts/<%= s.id %>/delete" method="POST" class="inline"
+                  onsubmit="return confirm('Delete <%= s.name %>?');">
+              <button type="submit" class="btn btn-sm btn-danger">Delete</button>
+            </form>
+          </div>
+        </div>
+      <% }); %>
+    </div>
+  <% } %>
+</section>
+
+<%- include('../partials/footer') %>

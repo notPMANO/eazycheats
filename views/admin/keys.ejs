@@ -1,0 +1,64 @@
+<% pageTitle = 'Keys' %>
+<%- include('../partials/header') %>
+
+<section class="page-head">
+  <div class="page-head-inner">
+    <div>
+      <nav class="crumbs"><a href="/admin">Admin</a> <span>/</span> Keys</nav>
+      <h1>Keys</h1>
+      <p class="muted">Generate keys, watch HWID binds, and disable leaked ones. A second HWID auto-disables a key and pings Discord.</p>
+    </div>
+    <div class="page-head-actions">
+      <a href="/admin/scripts" class="btn btn-ghost">Scripts</a>
+    </div>
+  </div>
+</section>
+
+<section class="container narrow">
+  <form action="/admin/keys" method="POST" class="form card-form">
+    <label>Note <small class="hint">Who is this for? (optional)</small>
+      <input type="text" name="note" placeholder="buyer name / discord handle">
+    </label>
+    <label>Duration (hours) <small class="hint">0 = permanent.</small>
+      <input type="number" name="hours" value="4" min="0" step="1">
+    </label>
+    <label class="checkrow">
+      <input type="checkbox" name="bind_hwid" value="1" checked>
+      <span>Lock to the first device (HWID)</span>
+    </label>
+    <div class="form-actions"><button type="submit" class="btn btn-primary">Generate key</button></div>
+  </form>
+</section>
+
+<section class="container">
+  <% if (keys.length === 0) { %>
+    <div class="empty"><p>No keys yet.</p></div>
+  <% } else { %>
+    <div class="admin-list">
+      <% keys.forEach(function(k) {
+           var expired = k.expires_at && (new Date(k.expires_at).getTime() < Date.now());
+           var status = k.disabled ? 'disabled' : (expired ? 'expired' : (k.hwid ? 'active' : 'unused'));
+      %>
+        <div class="admin-row">
+          <div class="admin-row-main">
+            <span class="admin-row-title"><code><%= k.key %></code></span>
+            <span class="muted">
+              <%= status %><% if (k.note) { %> · <%= k.note %><% } %><% if (k.hwid) { %> · HWID <%= k.hwid.substring(0, 16) %><% } %><% if (k.expires_at) { %> · expires <%= k.expires_at.replace('T', ' ').substring(0, 16) %> UTC<% } else { %> · permanent<% } %><% if (!k.bind_hwid) { %> · not locked<% } %>
+            </span>
+          </div>
+          <div class="admin-row-actions">
+            <% if (k.disabled) { %>
+              <form action="/admin/keys/<%= k.id %>/enable" method="POST" class="inline"><button type="submit" class="btn btn-sm btn-ghost">Enable</button></form>
+            <% } else { %>
+              <form action="/admin/keys/<%= k.id %>/disable" method="POST" class="inline"><button type="submit" class="btn btn-sm btn-ghost">Disable</button></form>
+            <% } %>
+            <form action="/admin/keys/<%= k.id %>/reset" method="POST" class="inline"><button type="submit" class="btn btn-sm btn-ghost">Reset HWID</button></form>
+            <form action="/admin/keys/<%= k.id %>/delete" method="POST" class="inline" onsubmit="return confirm('Delete this key?');"><button type="submit" class="btn btn-sm btn-danger">Delete</button></form>
+          </div>
+        </div>
+      <% }); %>
+    </div>
+  <% } %>
+</section>
+
+<%- include('../partials/footer') %>
