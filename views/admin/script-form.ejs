@@ -1,0 +1,39 @@
+<% pageTitle = script ? 'Edit script' : 'New script' %>
+<%- include('../partials/header') %>
+
+<section class="page-head">
+  <div class="page-head-inner">
+    <div>
+      <nav class="crumbs"><a href="/admin">Admin</a> <span>/</span> <a href="/admin/scripts">Scripts</a> <span>/</span> <%= script ? 'Edit' : 'New' %></nav>
+      <h1><%= script ? 'Edit script' : 'New script' %></h1>
+    </div>
+  </div>
+</section>
+
+<section class="container narrow">
+  <form action="<%= script ? '/admin/scripts/' + script.id : '/admin/scripts' %>" method="POST" class="form card-form">
+    <label>Name
+      <input type="text" name="name" value="<%= script ? script.name : '' %>" placeholder="e.g. Loader" required autofocus>
+    </label>
+
+    <label>Slug <small class="hint">URL path is <code>/s/&lt;slug&gt;</code>. Leave blank to auto-generate from the name.</small>
+      <input type="text" name="slug" value="<%= script ? script.slug : '' %>" placeholder="loader">
+    </label>
+
+    <label class="checkrow">
+      <input type="checkbox" name="protected" value="1" <%= script && script.protected ? 'checked' : '' %>>
+      <span>Protected — require a valid key (+ HWID) to fetch this script</span>
+    </label>
+
+    <label>Content <small class="hint">The raw Lua served at the URL.</small>
+      <textarea name="content" rows="18" spellcheck="false" placeholder="-- paste your Lua here"><%= script ? script.content : '' %></textarea>
+    </label>
+
+    <div class="form-actions">
+      <button type="submit" class="btn btn-primary"><%= script ? 'Save changes' : 'Create script' %></button>
+      <a href="/admin/scripts" class="btn btn-ghost">Cancel</a>
+    </div>
+  </form>
+</section>
+
+<%- include('../partials/footer') %>

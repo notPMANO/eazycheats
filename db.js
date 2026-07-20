@@ -46,6 +46,33 @@ db.exec(`
     price      TEXT,
     created_at TEXT NOT NULL DEFAULT (datetime('now'))
   );
+
+  -- Hosted Lua scripts, served raw at /s/<slug> for game:HttpGet.
+  -- protected = 1 means a valid key (+HWID) is required to fetch the content.
+  CREATE TABLE IF NOT EXISTS scripts (
+    id         INTEGER PRIMARY KEY AUTOINCREMENT,
+    slug       TEXT NOT NULL UNIQUE,
+    name       TEXT NOT NULL,
+    content    TEXT NOT NULL DEFAULT '',
+    protected  INTEGER NOT NULL DEFAULT 0,
+    updated_at TEXT NOT NULL DEFAULT (datetime('now')),
+    created_at TEXT NOT NULL DEFAULT (datetime('now'))
+  );
+
+  -- Access keys. Bound to the first HWID that uses them; a second HWID trips the
+  -- leak alert and disables the key. expires_at NULL = permanent.
+  CREATE TABLE IF NOT EXISTS keys (
+    id         INTEGER PRIMARY KEY AUTOINCREMENT,
+    key        TEXT NOT NULL UNIQUE,
+    hwid       TEXT,
+    note       TEXT,
+    discord_id TEXT,
+    bind_hwid  INTEGER NOT NULL DEFAULT 1,
+    disabled   INTEGER NOT NULL DEFAULT 0,
+    expires_at TEXT,
+    last_used  TEXT,
+    created_at TEXT NOT NULL DEFAULT (datetime('now'))
+  );
 `);
 
 // --- Migrations: add columns to existing databases if they're missing ---
@@ -66,6 +93,13 @@ db.exec('CREATE UNIQUE INDEX IF NOT EXISTS idx_users_username ON users(username)
 if (db.prepare('SELECT COUNT(*) AS n FROM games').get().n === 0) {
   db.prepare('INSERT INTO games (title, slug, image, sort_order) VALUES (?, ?, ?, ?)')
     .run('Roblox', 'roblox', '/img/roblox.svg', 1);
+}
+
+// Seed a permanent test key "123" (not HWID-locked, so it works on any device
+// for testing). Delete or disable it from the admin panel when you go live.
+if (!db.prepare('SELECT 1 FROM keys WHERE key = ?').get('123')) {
+  db.prepare('INSERT INTO keys (key, note, bind_hwid) VALUES (?, ?, 0)')
+    .run('123', 'test key (not HWID-locked)');
 }
 
 module.exports = db;
