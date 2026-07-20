@@ -76,7 +76,7 @@ client.once('clientReady', async () => {
           },
           {
             name: 'bind',
-            description: 'Lock the key to the first device (default true)',
+            description: 'Lock the key to the first device (default false)',
             type: ApplicationCommandOptionType.Boolean,
             required: false,
           },
@@ -313,7 +313,7 @@ async function grantPremiumKey(interaction) {
   }
 
   const length = interaction.options.getInteger('length') ?? PREMIUM_KEY_DEFAULT_LENGTH;
-  const bind = interaction.options.getBoolean('bind') ?? true;
+  const bind = interaction.options.getBoolean('bind') ?? false;
   const key = generatePremiumKey(length);
   const issuedAt = Date.now();
 
