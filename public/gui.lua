@@ -96,10 +96,12 @@ function Library.new(config)
     -- Free the game's mouse while the menu is open (default on; pass FreeMouse=false to disable).
     self.freeMouse = config.FreeMouse ~= false
     -- Links shown on the built-in Information tab (override via config when known).
-    self.discordLink = config.Discord or "discord.gg/eazycheats"   -- TODO: real invite
+    self.discordLink = config.Discord or "https://discord.gg/sSAe2dxShb"
     self.websiteLink = config.Website or "eazycheats.com"
     -- The Information tab is created automatically unless Information=false is passed.
     self.showInfoTab = config.Information ~= false
+    -- Optional cleanup run by the Information tab's Unload button before Destroy().
+    self.onUnload = config.OnUnload
 
     -- Destroy old GUI (previous session of this hub)
     local existing = player:FindFirstChild("PlayerGui") and player.PlayerGui:FindFirstChild("EazyCheats")
@@ -626,6 +628,18 @@ function Library:_createInfoTab()
     tab:_addInfoRow("Discord", self.discordLink, true)
     tab:_addInfoRow("Website", self.websiteLink, true)
 
+    -- Unload button at the bottom: runs the optional cleanup hook, then tears the
+    -- whole menu down (disconnects every tracked connection and destroys the GUI).
+    tab:AddSection("")
+    local lib = self
+    tab:AddButton({
+        Name = "Unload EazyCheats",
+        Callback = function()
+            if lib.onUnload then pcall(lib.onUnload) end
+            lib:Destroy()
+        end,
+    })
+
     return tab
 end
 
@@ -736,20 +750,30 @@ function TabClass:_addInfoRow(name, value, copyable)
     val.Parent = frame
 
     if copyable then
+        -- On click: copy to clipboard and flash a little "Copied to clipboard" sign
+        -- (no hover tooltip — the sign only appears once you actually click).
         frame.MouseButton1Click:Connect(function()
             local clip = setclipboard or (syn and syn.write_clipboard) or toclipboard or set_clipboard
             local ok = clip ~= nil and pcall(clip, value)
-            local restore = val.Text
-            val.Text = ok and "Copied!" or "Copy failed"
-            val.TextColor3 = COLORS.accent
-            task.delay(0.8, function()
-                if val and val.Parent then
-                    val.Text = restore
-                    val.TextColor3 = COLORS.text
-                end
+
+            local sign = Instance.new("TextLabel")
+            sign.Name = "CopySign"
+            sign.AutomaticSize = Enum.AutomaticSize.XY
+            sign.BackgroundColor3 = COLORS.background
+            sign.Text = "  " .. (ok and "Copied to clipboard" or "Copy failed") .. "  "
+            sign.TextColor3 = COLORS.text
+            sign.TextSize = 11
+            sign.Font = Enum.Font.GothamMedium
+            sign.ZIndex = 50
+            sign.Position = UDim2.new(0, 12, 0, -4)
+            sign.AnchorPoint = Vector2.new(0, 1)
+            sign.Parent = frame
+            makeCorner(sign, 4)
+            makeStroke(sign, COLORS.accent, 1)
+            task.delay(1.0, function()
+                if sign and sign.Parent then sign:Destroy() end
             end)
         end)
-        self:_attachTooltip(frame, "Click to copy")
     end
 
     return frame
