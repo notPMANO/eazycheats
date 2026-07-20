@@ -65,6 +65,13 @@ const FREE_KEY_TTL_HOURS = 4;          // how long a free key stays valid
 const FREE_KEY_SAFE_CHANNEL = 'free-key-safe';
 const FREE_KEY_TICKET_CATEGORY = '🔑 FREE KEY TICKETS';
 
+// --- Premium key settings (mod-generated, permanent) ---
+const PREMIUM_KEY_PREFIX = 'EazyCheats-Premium-';
+const PREMIUM_KEY_DEFAULT_LENGTH = 16; // digits, if a mod doesn't specify a length
+const PREMIUM_KEY_MIN_LENGTH = 6;
+const PREMIUM_KEY_MAX_LENGTH = 40;
+const PREMIUM_KEY_SAFE_CHANNEL = 'premium-key-safe';
+
 // Channel where closed-ticket transcripts get logged (in the STAFF category).
 const TICKET_LOG_CHANNEL = 'ticket-logs';
 
@@ -182,4 +189,6 @@ module.exports = {
   CATEGORIES, TICKET_CATEGORY, TICKET_LOG_CHANNEL, WELCOME_CHANNEL,
   FREE_KEY_PREFIX, FREE_KEY_DIGITS, FREE_KEY_TTL_HOURS,
   FREE_KEY_SAFE_CHANNEL, FREE_KEY_TICKET_CATEGORY,
+  PREMIUM_KEY_PREFIX, PREMIUM_KEY_DEFAULT_LENGTH,
+  PREMIUM_KEY_MIN_LENGTH, PREMIUM_KEY_MAX_LENGTH, PREMIUM_KEY_SAFE_CHANNEL,
 };

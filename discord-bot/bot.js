@@ -10,11 +10,14 @@ const {
 const {
   TICKET_STAFF_ROLES, MOD_ROLES, VERIFIED_ROLE, TICKET_CATEGORY, TICKET_LOG_CHANNEL,
   WELCOME_CHANNEL, FREE_KEY_TTL_HOURS, FREE_KEY_SAFE_CHANNEL, FREE_KEY_TICKET_CATEGORY,
+  PREMIUM_KEY_SAFE_CHANNEL, PREMIUM_KEY_DEFAULT_LENGTH,
+  PREMIUM_KEY_MIN_LENGTH, PREMIUM_KEY_MAX_LENGTH,
 } = require('./config');
 const { buildTicketWelcome } = require('./ticket-panel');
 const { buildWelcomeGreeting } = require('./welcome');
 const {
-  generateKey, addKey, updateKey, getKeys, buildKeyTicketMessage, buildSafeEntry,
+  generateKey, generatePremiumKey, addKey, updateKey, getKeys,
+  buildKeyTicketMessage, buildSafeEntry, buildPremiumKeyMessage, buildPremiumSafeEntry,
 } = require('./freekey');
 
 const { DISCORD_TOKEN, GUILD_ID } = process.env;
@@ -57,8 +60,21 @@ client.once('clientReady', async () => {
         description: 'Remove a user from this ticket',
         options: [{ name: 'user', description: 'The user to remove', type: ApplicationCommandOptionType.User, required: true }],
       },
+      {
+        name: 'premiumkey',
+        description: 'Generate a permanent premium key (mods only)',
+        defaultMemberPermissions: PermissionFlagsBits.KickMembers, // hides it from non-mods
+        options: [{
+          name: 'length',
+          description: `Number of digits in the key (default ${PREMIUM_KEY_DEFAULT_LENGTH})`,
+          type: ApplicationCommandOptionType.Integer,
+          required: false,
+          minValue: PREMIUM_KEY_MIN_LENGTH,
+          maxValue: PREMIUM_KEY_MAX_LENGTH,
+        }],
+      },
     ]);
-    console.log('   Registered /add and /remove commands.\n');
+    console.log('   Registered /add, /remove, /premiumkey commands.\n');
   } catch (e) {
     console.error('   Could not register slash commands:', e.message);
   }
@@ -83,6 +99,7 @@ client.on('interactionCreate', async (interaction) => {
     } else if (interaction.isChatInputCommand()) {
       if (interaction.commandName === 'add') return ticketAddRemove(interaction, true);
       if (interaction.commandName === 'remove') return ticketAddRemove(interaction, false);
+      if (interaction.commandName === 'premiumkey') return grantPremiumKey(interaction);
     }
   } catch (err) {
     console.error('Interaction error:', err.message);
@@ -123,7 +140,7 @@ const KEY_API_URL = process.env.KEY_API_URL || 'https://eazycheats.com/api/keys'
 
 // Register a generated key with the site's key API. Best-effort: never throws,
 // so a slow/down/not-yet-deployed API can't block issuing the key in Discord.
-async function registerKeyWithApi(key, hours, discordId) {
+async function registerKeyWithApi(key, hours, discordId, note = 'discord free key') {
   const secret = process.env.BOT_API_SECRET;
   if (!secret) {
     console.warn('BOT_API_SECRET not set — key not registered with the API (Discord-only).');
@@ -133,7 +150,7 @@ async function registerKeyWithApi(key, hours, discordId) {
     const res = await fetch(KEY_API_URL, {
       method: 'POST',
       headers: { 'content-type': 'application/json', 'x-api-key': secret },
-      body: JSON.stringify({ key, hours, discord_id: discordId, note: 'discord free key' }),
+      body: JSON.stringify({ key, hours, discord_id: discordId, note }),
     });
     if (res.ok) console.log(`Registered key with API: ${key}`);
     else {
@@ -236,6 +253,34 @@ async function expireKey(rec) {
     if (tch) tch.send('⏰ This free key has now **expired**.').catch(() => {});
   } catch (err) {
     console.error('expireKey failed:', err.message);
+  }
+}
+
+// ---------- Premium key (mod command) ----------
+async function grantPremiumKey(interaction) {
+  const member = interaction.member;
+  const isMod = member.roles.cache.some((r) => MOD_ROLES.includes(r.name))
+    || member.permissions.has(PermissionFlagsBits.Administrator);
+  if (!isMod) {
+    return interaction.reply({ content: '⛔ Only mods can generate premium keys.', ...EPHEMERAL });
+  }
+
+  const length = interaction.options.getInteger('length') ?? PREMIUM_KEY_DEFAULT_LENGTH;
+  const key = generatePremiumKey(length);
+  const issuedAt = Date.now();
+
+  // Register the permanent key (hours: 0 = never expires) with the site key API.
+  await registerKeyWithApi(key, 0, null, `premium key by ${interaction.user.tag}`);
+
+  // Post the key publicly in the channel where the command was run.
+  await interaction.reply(buildPremiumKeyMessage(key, interaction.user.id));
+
+  // Archive it in #premium-key-safe (unless the command was already run there).
+  const safe = interaction.guild.channels.cache.find(
+    (c) => c.type === ChannelType.GuildText && c.name === PREMIUM_KEY_SAFE_CHANNEL
+  );
+  if (safe && safe.id !== interaction.channelId) {
+    await safe.send(buildPremiumSafeEntry(key, interaction.user.id, issuedAt)).catch(() => {});
   }
 }
 
