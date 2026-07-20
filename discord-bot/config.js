@@ -72,6 +72,9 @@ const PREMIUM_KEY_MIN_LENGTH = 6;
 const PREMIUM_KEY_MAX_LENGTH = 40;
 const PREMIUM_KEY_SAFE_CHANNEL = 'premium-key-safe';
 
+// Channel where the bot pings on key-use / HWID alerts (mod-only).
+const KEY_ALERTS_CHANNEL = 'key-alerts';
+
 // Channel where closed-ticket transcripts get logged (in the STAFF category).
 const TICKET_LOG_CHANNEL = 'ticket-logs';
 
@@ -177,6 +180,7 @@ const CATEGORIES = [
     channels: [
       { name: 'free-key-safe',    readonly: true, topic: 'Log of issued free keys, with their live 4-hour timers.' },
       { name: 'premium-key-safe', readonly: true, topic: 'Premium keys live here.' },
+      { name: 'key-alerts',       readonly: true, topic: 'The bot pings here when a key is used on a new device (HWID mismatch).' },
     ],
   },
 ];
@@ -191,4 +195,5 @@ module.exports = {
   FREE_KEY_SAFE_CHANNEL, FREE_KEY_TICKET_CATEGORY,
   PREMIUM_KEY_PREFIX, PREMIUM_KEY_DEFAULT_LENGTH,
   PREMIUM_KEY_MIN_LENGTH, PREMIUM_KEY_MAX_LENGTH, PREMIUM_KEY_SAFE_CHANNEL,
+  KEY_ALERTS_CHANNEL,
 };

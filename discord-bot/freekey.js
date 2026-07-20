@@ -35,6 +35,7 @@ function updateKey(key, patch) {
   if (k) { Object.assign(k, patch); save(); }
 }
 function getKeys() { load(); return store.keys; }
+function findKey(key) { load(); return store.keys.find((x) => x.key === key) || null; }
 
 const randomDigits = (n) => {
   let s = '';
@@ -129,8 +130,27 @@ function buildPremiumSafeEntry(key, modId, issuedAtMs) {
   return { embeds: [embed] };
 }
 
+// Alert embed posted in #key-alerts when a key is used on a new device.
+function buildHwidAlert({ key, hwid, allHwids, ticketChannelId, userId }) {
+  const list = Array.isArray(allHwids) && allHwids.length
+    ? allHwids.map((h) => '`' + h + '`').join('\n').slice(0, 1024)
+    : '`' + (hwid || 'unknown') + '`';
+  const embed = new EmbedBuilder()
+    .setColor(0xe67e22)
+    .setTitle('⚠️ Key used on a new device')
+    .addFields(
+      { name: 'Key', value: '```\n' + key + '\n```' },
+      { name: 'Newest HWID', value: '`' + (hwid || 'unknown') + '`' },
+      { name: `All HWIDs seen (${Array.isArray(allHwids) ? allHwids.length : 1})`, value: list },
+      { name: 'User', value: userId ? `<@${userId}>` : 'unknown', inline: true },
+      { name: 'Ticket', value: ticketChannelId ? `<#${ticketChannelId}>` : 'n/a', inline: true },
+    )
+    .setFooter({ text: 'EazyCheats — key monitor' });
+  return { embeds: [embed] };
+}
+
 module.exports = {
-  generateKey, generatePremiumKey, addKey, updateKey, getKeys,
+  generateKey, generatePremiumKey, addKey, updateKey, getKeys, findKey,
   buildKeyTicketMessage, buildSafeEntry,
-  buildPremiumKeyMessage, buildPremiumSafeEntry,
+  buildPremiumKeyMessage, buildPremiumSafeEntry, buildHwidAlert,
 };
