@@ -319,13 +319,11 @@ function alertKeyUsed(key, hwid, allHwids) {
   try { require('./discord-bot/bot').keyUsedAlert({ key, hwid, allHwids }); } catch {}
 }
 
-// Validate a key + HWID.
-//  - Records every HWID a key is used on (key_hwids) and pings the owner when a
-//    2nd+ device appears ("ping instead of stop") — the key keeps working.
-//  - bind_hwid = 1 → hard lock: the first device binds and any other device is
-//    rejected (but the key is NOT auto-disabled; the owner is pinged and can
-//    /revoke). bind_hwid = 0 → validates on any device, tracked + pinged only.
-// Returns { ok, reason }.
+// Validate a key + HWID. NEVER blocks on device: it records every HWID a key is
+// used on (key_hwids) and pings the owner when a 2nd+ device appears — the key
+// keeps working on all of them. bind_hwid is just an opt-in flag (set via the bot)
+// that adds an activation notice; to actually cut off a sharer, disable the key
+// (/revoke). Returns { ok, reason }.
 function validateKeyAuth(key, hwid) {
   if (!key || !hwid) return { ok: false, reason: 'Missing key or HWID.' };
   let rec = db.prepare('SELECT * FROM keys WHERE key = ?').get(key);
@@ -339,7 +337,7 @@ function validateKeyAuth(key, hwid) {
       return { ok: false, reason: 'This key has expired. Get a fresh one from Discord.' };
     }
     const expiresIso = fk.expiresAtMs ? new Date(fk.expiresAtMs).toISOString() : null;
-    db.prepare('INSERT OR IGNORE INTO keys (key, note, bind_hwid, expires_at) VALUES (?, ?, 1, ?)')
+    db.prepare('INSERT OR IGNORE INTO keys (key, note, bind_hwid, expires_at) VALUES (?, ?, 0, ?)')
       .run(key, 'discord free key', expiresIso);
     rec = db.prepare('SELECT * FROM keys WHERE key = ?').get(key);
     if (!rec) return { ok: false, reason: 'Invalid key.' };
@@ -361,13 +359,12 @@ function validateKeyAuth(key, hwid) {
   }
   db.prepare("UPDATE keys SET last_used = datetime('now') WHERE id = ?").run(rec.id);
 
-  // --- Hard lock (bind_hwid = 1): bind first device, reject any other ---
-  if (rec.bind_hwid) {
-    if (!rec.hwid) {
-      db.prepare('UPDATE keys SET hwid = ? WHERE id = ?').run(hwid, rec.id);
-      notifyDiscord(`🔑 Key \`${rec.key}\`${rec.note ? ' (' + rec.note + ')' : ''} activated on HWID \`${hwid}\``);
-    } else if (rec.hwid !== hwid) {
-      return { ok: false, reason: 'This key is locked to another device.' };
+  // Record the primary (first) device for display. A locked key also posts an
+  // activation notice. Nothing is ever blocked — /revoke a key to cut off sharing.
+  if (!rec.hwid) {
+    db.prepare('UPDATE keys SET hwid = ? WHERE id = ?').run(hwid, rec.id);
+    if (rec.bind_hwid) {
+      notifyDiscord(`🔑 Key \`${rec.key}\`${rec.note ? ' (' + rec.note + ')' : ''} first used on HWID \`${hwid}\``);
     }
   }
   return { ok: true };
@@ -429,8 +426,9 @@ app.post('/api/keys', express.json(), (req, res) => {
   const body = req.body || {};
   const note = String(body.note || 'discord').trim().slice(0, 200);
   const discordId = body.discord_id ? String(body.discord_id).slice(0, 40) : null;
-  // Lock to first device by default; pass bind_hwid:false for a shared/test key.
-  const bindHwid = (body.bind_hwid === false || body.bind_hwid === 0) ? 0 : 1;
+  // Unlocked by default (keys just ping the owner on new devices, never block).
+  // Only lock when the caller explicitly passes bind_hwid:true.
+  const bindHwid = (body.bind_hwid === true || body.bind_hwid === 1 || body.bind_hwid === '1') ? 1 : 0;
   // Default 4h lifetime (matches the bot's free keys); hours:0 = permanent.
   const hours = body.hours == null ? 4 : parseFloat(body.hours);
   const expires = hours > 0 ? new Date(Date.now() + hours * 3600 * 1000).toISOString() : null;
