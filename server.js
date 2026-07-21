@@ -407,7 +407,15 @@ app.get('/s/:slug', (req, res) => {
   if (!script.protected) return res.send(script.content);
   const check = validateKeyAuth(String(req.query.key || ''), String(req.query.hwid || ''));
   if (!check.ok) return res.send(denyLua(check.reason));
-  return res.send(script.content);
+  // Per-buyer watermark: stamp a unique marker (hash of key+HWID) into the
+  // obfuscated payload so a leaked dump traces back to who it was served to.
+  let out = script.content;
+  if (out.indexOf('__EZ_WM__') !== -1) {
+    const wm = crypto.createHash('sha256')
+      .update(String(req.query.key || '') + '|' + String(req.query.hwid || '')).digest('hex').slice(0, 16);
+    out = out.split('__EZ_WM__').join(wm);
+  }
+  return res.send(out);
 });
 
 // ============================================================
@@ -876,10 +884,12 @@ app.use((err, req, res, next) => {
 // truth for these slugs — edit scripts/<slug>.lua and push to update it.
 function seedScriptsFromRepo() {
   const dir = path.join(__dirname, 'scripts');
-  const manifest = { hub: { name: 'Hub', protected: 1 } };
+  // Serve the OBFUSCATED hub. The clean source (scripts/hub.lua) is gitignored
+  // and never committed to this public repo.
+  const manifest = { hub: { name: 'Hub', protected: 1, file: 'hub.obf.lua' } };
   for (const [slug, meta] of Object.entries(manifest)) {
     let content;
-    try { content = fs.readFileSync(path.join(dir, slug + '.lua'), 'utf8'); } catch { continue; }
+    try { content = fs.readFileSync(path.join(dir, meta.file || (slug + '.lua')), 'utf8'); } catch { continue; }
     const row = db.prepare('SELECT id FROM scripts WHERE slug = ?').get(slug);
     if (row) {
       db.prepare("UPDATE scripts SET name = ?, content = ?, protected = ?, updated_at = datetime('now') WHERE slug = ?")

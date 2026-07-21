@@ -9,3 +9,7 @@ npm-debug.log*
 discord-bot/node_modules/
 discord-bot/.env
 discord-bot/data/
+
+# Clean hub source stays OUT of this public repo — only the obfuscated build
+# (scripts/hub.obf.lua) is committed + served.
+scripts/hub.lua
