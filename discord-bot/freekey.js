@@ -36,6 +36,13 @@ function updateKey(key, patch) {
 }
 function getKeys() { load(); return store.keys; }
 function findKey(key) { load(); return store.keys.find((x) => x.key === key) || null; }
+// Most recently issued key for a user (or null). Used by the "Get New Key" button.
+function latestKeyForUser(userId) {
+  load();
+  return store.keys
+    .filter((x) => x.userId === userId)
+    .sort((a, b) => b.issuedAt - a.issuedAt)[0] || null;
+}
 
 const randomDigits = (n) => {
   let s = '';
@@ -69,16 +76,16 @@ function buildKeyTicketMessage(key, userId, expiresAtMs) {
       '```\n' + key + '\n```\n' +
       `⏳ Valid for **${FREE_KEY_TTL_HOURS} hours** — expires <t:${sec(expiresAtMs)}:R> ` +
       `(<t:${sec(expiresAtMs)}:f>).\n\n` +
-      'Copy it now. When you\'re done, a mod can close this ticket.'
+      'Copy it now. When it expires, press **Get New Key** below for a fresh one.'
     )
     .setFooter({ text: 'EazyCheats — free key' });
 
   const row = new ActionRowBuilder().addComponents(
     new ButtonBuilder()
-      .setCustomId('ticket_close')
-      .setLabel('Close Ticket')
-      .setEmoji('🔒')
-      .setStyle(ButtonStyle.Danger)
+      .setCustomId('freekey_new')
+      .setLabel('Get New Key')
+      .setEmoji('🔄')
+      .setStyle(ButtonStyle.Success)
   );
   return { content: `<@${userId}>`, embeds: [embed], components: [row] };
 }
@@ -150,7 +157,7 @@ function buildHwidAlert({ key, hwid, allHwids, ticketChannelId, userId }) {
 }
 
 module.exports = {
-  generateKey, generatePremiumKey, addKey, updateKey, getKeys, findKey,
+  generateKey, generatePremiumKey, addKey, updateKey, getKeys, findKey, latestKeyForUser,
   buildKeyTicketMessage, buildSafeEntry,
   buildPremiumKeyMessage, buildPremiumSafeEntry, buildHwidAlert,
 };

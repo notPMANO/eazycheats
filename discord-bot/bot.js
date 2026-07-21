@@ -16,7 +16,7 @@ const {
 const { buildTicketWelcome } = require('./ticket-panel');
 const { buildWelcomeGreeting } = require('./welcome');
 const {
-  generateKey, generatePremiumKey, addKey, updateKey, getKeys, findKey,
+  generateKey, generatePremiumKey, addKey, updateKey, getKeys, findKey, latestKeyForUser,
   buildKeyTicketMessage, buildSafeEntry, buildPremiumKeyMessage, buildPremiumSafeEntry,
   buildHwidAlert,
 } = require('./freekey');
@@ -24,6 +24,9 @@ const {
 const { DISCORD_TOKEN, GUILD_ID } = process.env;
 
 const EPHEMERAL = { flags: MessageFlags.Ephemeral };
+// Send with no push notification (Discord "silent message") — for join greetings
+// and free-key messages so they don't ping members/staff.
+const SILENT = MessageFlags.SuppressNotifications;
 const client = new Client({
   intents: [GatewayIntentBits.Guilds, GatewayIntentBits.GuildMembers],
 });
@@ -39,7 +42,8 @@ client.on('guildMemberAdd', async (member) => {
     const verify = member.guild.channels.cache.find(
       (c) => c.type === ChannelType.GuildText && c.name === 'verify'
     );
-    await welcome.send(buildWelcomeGreeting(member, verify));
+    // Silent so joins don't ping the new member (or anyone watching #welcome).
+    await welcome.send({ ...buildWelcomeGreeting(member, verify), flags: SILENT });
   } catch (err) {
     console.error('Welcome greeting failed:', err.message);
   }
@@ -119,6 +123,7 @@ client.on('interactionCreate', async (interaction) => {
       if (interaction.customId === 'verify_agree') return verifyMember(interaction);
       if (interaction.customId === 'ticket_open') return openTicket(interaction);
       if (interaction.customId === 'freekey_request') return requestFreeKey(interaction);
+      if (interaction.customId === 'freekey_new') return newFreeKey(interaction);
       if (interaction.customId === 'ticket_close') return closeTicket(interaction);
     } else if (interaction.isChatInputCommand()) {
       if (interaction.commandName === 'add') return ticketAddRemove(interaction, true);
@@ -209,10 +214,55 @@ async function callKeyApi(subpath, payload) {
   }
 }
 
+const isFreeKeyChannel = (ch) => ch && ch.topic && ch.topic.startsWith('freekey-owner:');
+const freeKeyOwnerId = (ch) => (isFreeKeyChannel(ch) ? ch.topic.split(':')[1] : null);
+
+// Generate a key, register it, post it in the ticket, log it, persist, and
+// schedule expiry. All sends are silent so nobody gets pinged.
+async function issueKey(guild, channel, userId) {
+  const key = generateKey();
+  const issuedAt = Date.now();
+  const expiresAt = issuedAt + FREE_KEY_TTL_HOURS * 60 * 60 * 1000;
+
+  await registerKeyWithApi(key, FREE_KEY_TTL_HOURS, userId);
+
+  await channel.send({ ...buildKeyTicketMessage(key, userId, expiresAt), flags: SILENT }).catch(() => {});
+
+  const safe = guild.channels.cache.find(
+    (c) => c.type === ChannelType.GuildText && c.name === FREE_KEY_SAFE_CHANNEL
+  );
+  let safeMsg = null;
+  if (safe) {
+    safeMsg = await safe.send({
+      ...buildSafeEntry({ key, userId, ticketChannelId: channel.id, issuedAtMs: issuedAt, expiresAtMs: expiresAt, status: 'active' }),
+      flags: SILENT,
+    }).catch(() => null);
+  }
+
+  const rec = {
+    key, userId, ticketChannelId: channel.id,
+    safeChannelId: safe ? safe.id : null, safeMessageId: safeMsg ? safeMsg.id : null,
+    issuedAt, expiresAt, status: 'active',
+  };
+  addKey(rec);
+  scheduleExpiry(rec);
+  return rec;
+}
+
 async function requestFreeKey(interaction) {
   const guild = interaction.guild;
   const opener = interaction.user;
   await interaction.deferReply(EPHEMERAL);
+
+  // One free-key ticket per person — point them back to their existing one.
+  const existing = guild.channels.cache.find(
+    (c) => c.type === ChannelType.GuildText && c.topic === `freekey-owner:${opener.id}`
+  );
+  if (existing) {
+    return interaction.editReply({
+      content: `❗ You already have a free-key ticket: <#${existing.id}> — use the **Get New Key** button there when your key expires.`,
+    });
+  }
 
   // Only the requester + mods can see a free-key ticket.
   const modRoles = guild.roles.cache.filter((r) => MOD_ROLES.includes(r.name));
@@ -239,43 +289,34 @@ async function requestFreeKey(interaction) {
     name: `freekey-${sanitizeName(opener.username)}`,
     type: ChannelType.GuildText,
     parent: category ? category.id : undefined,
-    topic: `ticket-owner:${opener.id}`,
+    topic: `freekey-owner:${opener.id}`,
     permissionOverwrites: overwrites,
     reason: `Free key requested by ${opener.tag}`,
   });
 
-  // Generate the key + timing.
-  const key = generateKey();
-  const issuedAt = Date.now();
-  const expiresAt = issuedAt + FREE_KEY_TTL_HOURS * 60 * 60 * 1000;
-
-  // Register the key with the site's key API so it actually validates (best-effort).
-  await registerKeyWithApi(key, FREE_KEY_TTL_HOURS, opener.id);
-
-  // Give the key to the user in their ticket.
-  await channel.send(buildKeyTicketMessage(key, opener.id, expiresAt));
-
-  // Log it to the mod-only free key safe.
-  const safe = guild.channels.cache.find(
-    (c) => c.type === ChannelType.GuildText && c.name === FREE_KEY_SAFE_CHANNEL
-  );
-  let safeMsg = null;
-  if (safe) {
-    safeMsg = await safe.send(buildSafeEntry({
-      key, userId: opener.id, ticketChannelId: channel.id,
-      issuedAtMs: issuedAt, expiresAtMs: expiresAt, status: 'active',
-    })).catch(() => null);
-  }
-
-  const rec = {
-    key, userId: opener.id, ticketChannelId: channel.id,
-    safeChannelId: safe ? safe.id : null, safeMessageId: safeMsg ? safeMsg.id : null,
-    issuedAt, expiresAt, status: 'active',
-  };
-  addKey(rec);
-  scheduleExpiry(rec);
-
+  await issueKey(guild, channel, opener.id);
   await interaction.editReply({ content: `✅ Your free key is ready in <#${channel.id}>!` });
+}
+
+// "Get New Key" button — only the owner, and only once their current key expired.
+async function newFreeKey(interaction) {
+  const ownerId = freeKeyOwnerId(interaction.channel);
+  if (!ownerId) {
+    return interaction.reply({ content: 'This button only works inside a free-key ticket.', ...EPHEMERAL });
+  }
+  if (interaction.user.id !== ownerId) {
+    return interaction.reply({ content: '⛔ Only the ticket owner can request a new key here.', ...EPHEMERAL });
+  }
+  const latest = latestKeyForUser(ownerId);
+  if (latest && latest.status !== 'expired' && latest.expiresAt > Date.now()) {
+    return interaction.reply({
+      content: `⏳ Your current key is still active — it expires <t:${Math.floor(latest.expiresAt / 1000)}:R>. Come back then for a new one.`,
+      ...EPHEMERAL,
+    });
+  }
+  await interaction.deferReply(EPHEMERAL);
+  await issueKey(interaction.guild, interaction.channel, ownerId);
+  await interaction.editReply({ content: '✅ A fresh key has been posted above.' });
 }
 
 function scheduleExpiry(rec) {
@@ -297,7 +338,12 @@ async function expireKey(rec) {
       }
     }
     const tch = await client.channels.fetch(rec.ticketChannelId).catch(() => null);
-    if (tch) tch.send('⏰ This free key has now **expired**.').catch(() => {});
+    if (tch) {
+      tch.send({
+        content: '⏰ This free key has now **expired** — press **Get New Key** above for a fresh one.',
+        flags: SILENT,
+      }).catch(() => {});
+    }
   } catch (err) {
     console.error('expireKey failed:', err.message);
   }
