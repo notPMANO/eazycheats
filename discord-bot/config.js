@@ -135,6 +135,22 @@ const CATEGORIES = [
     access: 'member',
     channels: [
       { name: 'general',    topic: 'General chat.' },
+      // Forum channel — members create a post per suggestion and vote with 👍.
+      {
+        name: 'suggestions',
+        type: 'forum',
+        topic: 'Suggest features and QOL for the script — one idea per post. Search first to avoid duplicates, tag it, and 👍 the ideas you want to see!',
+        forum: {
+          defaultReaction: '👍',
+          tags: [
+            { name: 'Feature',  emoji: { name: '💡' } },
+            { name: 'QOL',      emoji: { name: '🔧' } },
+            { name: 'Bug',      emoji: { name: '🐛' } },
+            { name: 'Approved', emoji: { name: '✅' }, moderated: true },
+            { name: 'Declined', emoji: { name: '❌' }, moderated: true },
+          ],
+        },
+      },
       { name: 'off-topic',  topic: 'Anything goes (within the rules).' },
       { name: 'media',      topic: 'Clips, screenshots and highlights.' },
       { name: 'memes',      topic: 'Memes only.' },

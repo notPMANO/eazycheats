@@ -84,17 +84,21 @@ client.once('clientReady', async () => {
     //   customer    -> Customer + staff only.
     //   staff       -> all staff roles only.
     //   ticketstaff -> only the ticket-staff roles (Support + Moderator).
-    function overwritesFor(access, readonly, isVoice) {
+    function overwritesFor(access, readonly, isVoice, isForum) {
       const ow = [];
+      // Forums need post-creation + reply perms (post creation uses SendMessages;
+      // these override the server-wide "no member threads" rule for this channel).
+      const forumExtra = isForum ? [P.SendMessagesInThreads, P.CreatePublicThreads] : [];
       const textAllow = readonly ? [P.ViewChannel, P.ReadMessageHistory]
-        : [P.ViewChannel, P.SendMessages, P.ReadMessageHistory, P.AddReactions];
+        : [P.ViewChannel, P.SendMessages, P.ReadMessageHistory, P.AddReactions, ...forumExtra];
       const voiceAllow = [P.ViewChannel, P.Connect, P.Speak];
       const allowFor = isVoice ? voiceAllow : textAllow;
+      const staffAllow = isForum ? [...STAFF_ALLOW, ...forumExtra] : STAFF_ALLOW;
 
       if (access === 'public') {
         // Visible to everyone; read-only for non-staff.
         ow.push({ id: everyone.id, allow: [P.ViewChannel, P.ReadMessageHistory], deny: [P.SendMessages, P.AddReactions] });
-        for (const sr of staffRoleObjs) ow.push({ id: sr.id, allow: STAFF_ALLOW });
+        for (const sr of staffRoleObjs) ow.push({ id: sr.id, allow: staffAllow });
         return ow;
       }
 
@@ -106,13 +110,13 @@ client.once('clientReady', async () => {
 
       if (access === 'ticketstaff') {
         // ONLY Support + Moderator — not all staff (Dev is excluded).
-        for (const sr of ticketStaffObjs) ow.push({ id: sr.id, allow: STAFF_ALLOW });
+        for (const sr of ticketStaffObjs) ow.push({ id: sr.id, allow: staffAllow });
         return ow;
       }
 
       if (access === 'modonly') {
         // ONLY the "mods" (Moderator) — the key system.
-        for (const sr of modRoleObjs) ow.push({ id: sr.id, allow: STAFF_ALLOW });
+        for (const sr of modRoleObjs) ow.push({ id: sr.id, allow: staffAllow });
         return ow;
       }
 
@@ -123,7 +127,7 @@ client.once('clientReady', async () => {
         if (customer) ow.push({ id: customer.id, allow: allowFor });
       }
       // member / customer / staff: all staff can see + talk.
-      for (const sr of staffRoleObjs) ow.push({ id: sr.id, allow: STAFF_ALLOW });
+      for (const sr of staffRoleObjs) ow.push({ id: sr.id, allow: staffAllow });
       return ow;
     }
 
@@ -159,8 +163,10 @@ client.once('clientReady', async () => {
       for (const ch of catDef.channels) {
         const access = ch.access || catDef.access;
         const isVoice = ch.type === 'voice';
-        const type = isVoice ? ChannelType.GuildVoice : ChannelType.GuildText;
-        const ow = overwritesFor(access, ch.readonly, isVoice);
+        const isForum = ch.type === 'forum';
+        const type = isVoice ? ChannelType.GuildVoice
+          : isForum ? ChannelType.GuildForum : ChannelType.GuildText;
+        const ow = overwritesFor(access, ch.readonly, isVoice, isForum);
         let channel = findChannel(ch.name, type);
 
         if (channel) {
@@ -171,15 +177,20 @@ client.once('clientReady', async () => {
           await channel.permissionOverwrites.set(ow, 'EazyCheats auto-setup');
           console.log(`    = channel exists (perms refreshed): ${ch.name}`);
         } else {
-          channel = await guild.channels.create({
+          const opts = {
             name: ch.name,
             type,
             parent: category.id,
-            topic: isVoice ? undefined : ch.topic,
             permissionOverwrites: ow,
             reason: 'EazyCheats auto-setup',
-          });
-          console.log(`    + created ${isVoice ? 'voice' : 'text'} channel: ${ch.name}`);
+          };
+          if (!isVoice) opts.topic = ch.topic;
+          if (isForum && ch.forum) {
+            if (ch.forum.tags) opts.availableTags = ch.forum.tags;
+            if (ch.forum.defaultReaction) opts.defaultReactionEmoji = { name: ch.forum.defaultReaction };
+          }
+          channel = await guild.channels.create(opts);
+          console.log(`    + created ${isForum ? 'forum' : isVoice ? 'voice' : 'text'} channel: ${ch.name}`);
         }
         if (ch.ticketPanel) ticketPanelChannel = channel;
         if (ch.verifyPanel) verifyPanelChannel = channel;
