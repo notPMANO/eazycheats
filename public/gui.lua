@@ -96,7 +96,7 @@ function Library.new(config)
     -- Free the game's mouse while the menu is open (default on; pass FreeMouse=false to disable).
     self.freeMouse = config.FreeMouse ~= false
     -- Links shown on the built-in Information tab (override via config when known).
-    self.discordLink = config.Discord or "https://discord.gg/sSAe2dxShb"
+    self.discordLink = config.Discord or "https://discord.gg/N75kj4wffC"
     self.websiteLink = config.Website or "eazycheats.com"
     -- The Information tab is created automatically unless Information=false is passed.
     self.showInfoTab = config.Information ~= false
