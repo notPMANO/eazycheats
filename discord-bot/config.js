@@ -134,7 +134,6 @@ const CATEGORIES = [
     name: '💬 COMMUNITY',
     access: 'member',
     channels: [
-      { name: 'general',    topic: 'General chat.' },
       // Forum channel — members create a post per suggestion and vote with 👍.
       {
         name: 'suggestions',
@@ -151,10 +150,6 @@ const CATEGORIES = [
           ],
         },
       },
-      { name: 'off-topic',  topic: 'Anything goes (within the rules).' },
-      { name: 'media',      topic: 'Clips, screenshots and highlights.' },
-      { name: 'memes',      topic: 'Memes only.' },
-      { name: 'giveaways',  readonly: true, topic: 'Giveaways and events.' },
     ],
   },
   {
