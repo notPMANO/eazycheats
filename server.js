@@ -871,12 +871,36 @@ app.use((err, req, res, next) => {
   res.status(500).render('error', { message: msg });
 });
 
+// Seed hosted scripts from the repo's scripts/ folder so large scripts (the hub)
+// deploy via git instead of a giant admin paste. The repo file is the source of
+// truth for these slugs — edit scripts/<slug>.lua and push to update it.
+function seedScriptsFromRepo() {
+  const dir = path.join(__dirname, 'scripts');
+  const manifest = { hub: { name: 'Hub', protected: 1 } };
+  for (const [slug, meta] of Object.entries(manifest)) {
+    let content;
+    try { content = fs.readFileSync(path.join(dir, slug + '.lua'), 'utf8'); } catch { continue; }
+    const row = db.prepare('SELECT id FROM scripts WHERE slug = ?').get(slug);
+    if (row) {
+      db.prepare("UPDATE scripts SET name = ?, content = ?, protected = ?, updated_at = datetime('now') WHERE slug = ?")
+        .run(meta.name, content, meta.protected, slug);
+    } else {
+      db.prepare('INSERT INTO scripts (slug, name, content, protected) VALUES (?, ?, ?, ?)')
+        .run(slug, meta.name, content, meta.protected);
+    }
+    console.log(`  Seeded script /s/${slug} (${content.length} bytes, ${meta.protected ? 'protected' : 'public'})`);
+  }
+}
+
 app.listen(config.PORT, () => {
   console.log(`\n  ${config.SITE_NAME} running at http://localhost:${config.PORT}`);
   console.log(`  Admin account: ${config.ADMIN_EMAIL} (sign up with this email to get admin powers)\n`);
 
   // One-time cleanup of any leftover test accounts.
   try { db.prepare("DELETE FROM users WHERE email LIKE '%@example.com'").run(); } catch {}
+
+  // Load the hub (and any other repo scripts) into the DB from scripts/.
+  try { seedScriptsFromRepo(); } catch (err) { console.error('  Script seed failed:', err.message); }
 
   // Start the EazyCheats Discord bot in the same process so it stays online
   // 24/7 with the site. Best-effort: a bot problem never crashes the website.

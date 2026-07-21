@@ -105,11 +105,8 @@ if (db.prepare('SELECT COUNT(*) AS n FROM games').get().n === 0) {
     .run('Roblox', 'roblox', '/img/roblox.svg', 1);
 }
 
-// Seed a permanent test key "123" (not HWID-locked, so it works on any device
-// for testing). Delete or disable it from the admin panel when you go live.
-if (!db.prepare('SELECT 1 FROM keys WHERE key = ?').get('123')) {
-  db.prepare('INSERT INTO keys (key, note, bind_hwid) VALUES (?, ?, 0)')
-    .run('123', 'test key (not HWID-locked)');
-}
+// (Test key "123" removed — the site is live. Real keys come from the Discord
+// bot / admin panel.) Drop any leftover test key from an earlier boot.
+try { db.prepare("DELETE FROM keys WHERE key = '123'").run(); } catch {}
 
 module.exports = db;
