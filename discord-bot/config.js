@@ -117,7 +117,7 @@ const GAMES = [
     prefix: 'prior',
     emoji: '🩸',
     keyPrefix: 'Prior-Free-Key-',
-    renameFrom: { general: 'general', suggestions: 'suggestions', updates: 'updates' },
+    renameFrom: { general: 'general', suggestions: 'suggestions', updates: 'updates', 'to-do-list': 'to-do-list' },
   },
   {
     key: 'pd',
@@ -139,6 +139,7 @@ const GAME_CHANNELS = [
   { suffix: 'general',     type: 'text' },
   { suffix: 'suggestions', type: 'forum' },
   { suffix: 'updates',     type: 'text', readonly: true },
+  { suffix: 'to-do-list',  type: 'text', readonly: true },
   { suffix: 'freekey',     type: 'text', readonly: true, freekeyPanel: true },
   { suffix: 'script',      type: 'text', readonly: true },
 ];
@@ -190,7 +191,6 @@ const CATEGORIES = [
       { name: 'choose-your-games', readonly: true, gamePicker: true, topic: 'Pick which games you want to see. Click a button to unlock its channels.' },
       { name: 'rules',          readonly: true,  topic: 'Server rules. Breaking them = warning, mute, or ban.' },
       { name: 'announcements',  readonly: true,  topic: 'Official EazyCheats announcements.' },
-      { name: 'faq',            readonly: true,  topic: 'Frequently asked questions before you open a ticket.' },
     ],
   },
   {
@@ -199,16 +199,6 @@ const CATEGORIES = [
     channels: [
       { name: 'open-a-ticket',  readonly: true, ticketPanel: true, topic: 'Click the button to open a private support ticket.' },
       { name: 'support-info',   readonly: true, topic: 'How support works and what info to have ready.' },
-    ],
-  },
-  {
-    name: '⭐ CUSTOMER',
-    access: 'customer',
-    channels: [
-      { name: 'downloads',      readonly: true, topic: 'Product downloads — customers only.' },
-      { name: 'changelog',      readonly: true, topic: 'Version history for your purchases.' },
-      { name: 'product-status', readonly: true, topic: 'Live status: undetected / updating / down.' },
-      { name: 'customer-chat',  topic: 'Private chat for paying customers.' },
     ],
   },
   {
