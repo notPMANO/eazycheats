@@ -13,7 +13,7 @@ const {
   TICKET_CATEGORY, FREE_KEY_TICKET_CATEGORY,
   GAMES, GAME_CHANNELS, SUGGESTION_TAGS,
 } = require('./config');
-const { buildTicketPanel, buildGamePicker, buildFreeKeyPanel } = require('./ticket-panel');
+const { buildTicketPanel, buildGamePicker, buildFreeKeyPanel, buildStaffCommandsInfo } = require('./ticket-panel');
 const { buildVerifyPanel } = require('./verify-panel');
 const { buildWelcomeInfo } = require('./welcome');
 
@@ -174,6 +174,7 @@ client.once('clientReady', async () => {
     let verifyPanelChannel = null;
     let welcomeInfoChannel = null;
     let gamePickerChannel = null;
+    let staffCommandsChannel = null;
 
     for (const catDef of CATEGORIES) {
       const category = await ensureCategory(catDef.name, catDef.access);
@@ -213,6 +214,7 @@ client.once('clientReady', async () => {
         if (ch.verifyPanel) verifyPanelChannel = channel;
         if (ch.welcomeInfo) welcomeInfoChannel = channel;
         if (ch.gamePicker) gamePickerChannel = channel;
+        if (ch.staffCommands) staffCommandsChannel = channel;
       }
     }
 
@@ -318,6 +320,7 @@ client.once('clientReady', async () => {
     }
     const pickerOk = (m) => visibleGames.every((g) => hasButton(`game_toggle_${g.key}`)(m)) && !hiddenGameBtns.some((id) => hasButton(id)(m));
     await ensurePanel(gamePickerChannel, pickerOk, () => buildGamePicker(visibleGames), 'game picker');
+    await ensurePanel(staffCommandsChannel, hasEmbedTitle('Staff Commands'), () => buildStaffCommandsInfo(), 'staff commands list');
 
     // The ticket panel dropped its free-key button — remove the old version so
     // the support-only panel gets posted.

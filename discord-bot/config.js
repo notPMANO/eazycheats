@@ -216,7 +216,7 @@ const CATEGORIES = [
     access: 'staff',
     channels: [
       { name: 'staff-chat',     topic: 'Private staff discussion.' },
-      { name: 'staff-commands', topic: 'Run bot/admin commands here.' },
+      { name: 'staff-commands', staffCommands: true, topic: 'Run bot/admin commands here.' },
       { name: 'mod-log',        readonly: true, topic: 'Moderation and bot action log.' },
       // Ticket transcripts — only Support + Moderator can see these.
       { name: 'ticket-logs', access: 'ticketstaff', topic: 'Transcripts of closed tickets. Delete once no longer needed.' },

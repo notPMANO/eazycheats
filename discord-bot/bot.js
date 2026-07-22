@@ -103,8 +103,13 @@ client.once('clientReady', async () => {
           { name: 'on', description: 'true = lock to device, false = unlock', type: ApplicationCommandOptionType.Boolean, required: true },
         ],
       },
+      {
+        name: 'closeticket',
+        description: 'Close & delete the current ticket (mods only)',
+        defaultMemberPermissions: PermissionFlagsBits.KickMembers,
+      },
     ]);
-    console.log('   Registered /add, /remove, /premiumkey, /revoke, /hwidbind commands.\n');
+    console.log('   Registered /add, /remove, /premiumkey, /revoke, /hwidbind, /closeticket commands.\n');
   } catch (e) {
     console.error('   Could not register slash commands:', e.message);
   }
@@ -136,6 +141,7 @@ client.on('interactionCreate', async (interaction) => {
       if (interaction.commandName === 'premiumkey') return grantPremiumKey(interaction);
       if (interaction.commandName === 'revoke') return revokeKeyCommand(interaction);
       if (interaction.commandName === 'hwidbind') return hwidBindCommand(interaction);
+      if (interaction.commandName === 'closeticket') return closeTicketCommand(interaction);
     }
   } catch (err) {
     console.error('Interaction error:', err.message);
@@ -528,6 +534,22 @@ async function openTicket(interaction) {
   await channel.send(buildTicketWelcome(opener.id, staffMention));
 
   await interaction.editReply({ content: `✅ Your ticket is ready: <#${channel.id}>` });
+}
+
+// /closeticket — mods delete the current ticket. Support tickets get a
+// transcript first; free-key tickets are just removed.
+async function closeTicketCommand(interaction) {
+  if (!memberIsMod(interaction.member)) {
+    return interaction.reply({ content: '⛔ Only mods can close tickets.', ...EPHEMERAL });
+  }
+  const channel = interaction.channel;
+  if (isTicketChannel(channel)) return closeTicket(interaction); // support: transcript + delete
+  if (isFreeKeyChannel(channel)) {
+    await interaction.reply({ content: '🔒 Closing this key ticket in 5 seconds…' });
+    setTimeout(() => channel.delete('Key ticket closed by mod').catch(() => {}), 5000);
+    return;
+  }
+  return interaction.reply({ content: '⚠️ Run this inside a ticket channel.', ...EPHEMERAL });
 }
 
 async function closeTicket(interaction) {

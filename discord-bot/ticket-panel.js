@@ -95,4 +95,26 @@ function buildTicketWelcome(userId, staffMention) {
   return { content: `<@${userId}>`, embeds: [embed], components: [row] };
 }
 
-module.exports = { buildTicketPanel, buildTicketWelcome, buildGamePicker, buildFreeKeyPanel };
+// Reference list of every staff/mod command, posted in #staff-commands.
+function buildStaffCommandsInfo() {
+  const embed = new EmbedBuilder()
+    .setColor(0xe74c3c)
+    .setTitle('🛠️ Staff Commands')
+    .setDescription('All commands are **mods only** and hidden from regular members.')
+    .addFields(
+      { name: '🎫 Tickets', value:
+        '`/add <user>` — add someone to the current ticket\n' +
+        '`/remove <user>` — remove someone from the current ticket\n' +
+        '`/closeticket` — close & delete the current ticket (support or free-key)' },
+      { name: '🔑 Keys', value:
+        '`/premiumkey [length] [bind]` — generate a **permanent** premium key\n' +
+        '`/revoke <key>` — disable a key so it stops validating\n' +
+        '`/hwidbind <key> <on>` — turn a key\'s device-lock on/off' },
+    )
+    .setFooter({ text: 'EazyCheats — staff reference' });
+  return { embeds: [embed] };
+}
+
+module.exports = {
+  buildTicketPanel, buildTicketWelcome, buildGamePicker, buildFreeKeyPanel, buildStaffCommandsInfo,
+};
