@@ -292,10 +292,12 @@ async function requestFreeKey(interaction, gameKey) {
     });
   }
 
-  // Only the requester + mods can see a free-key ticket.
+  // Only the requester + mods can see a free-key ticket. It's created UNDER the
+  // game's own category — channel-level overwrites keep it private (deny @everyone,
+  // allow opener + mods), so other game-role members can't see it.
   const modRoles = guild.roles.cache.filter((r) => MOD_ROLES.includes(r.name));
   const category = guild.channels.cache.find(
-    (c) => c.type === ChannelType.GuildCategory && c.name === FREE_KEY_TICKET_CATEGORY
+    (c) => c.type === ChannelType.GuildCategory && c.name === game.category
   );
 
   const overwrites = [
