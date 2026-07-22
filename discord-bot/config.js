@@ -198,7 +198,6 @@ const CATEGORIES = [
     access: 'member',
     channels: [
       { name: 'open-a-ticket',  readonly: true, ticketPanel: true, topic: 'Click the button to open a private support ticket.' },
-      { name: 'support-info',   readonly: true, topic: 'How support works and what info to have ready.' },
     ],
   },
   {
