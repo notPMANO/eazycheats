@@ -10,7 +10,7 @@ function buildTicketPanel() {
     .setTitle('🎫 EazyCheats Support')
     .setDescription(
       'Need help? Click the button below to open your own **private ticket**.\n\n' +
-      'Only you and our staff can see it. Check <#faq> and <#support-info> first!\n\n' +
+      'Only you and our staff can see it. Check <#support-info> first!\n\n' +
       '_Looking for a free key? Head to your game\'s **generate-free-key** channel._'
     )
     .setFooter({ text: 'EazyCheats — We make you better at games' });
