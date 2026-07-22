@@ -22,6 +22,14 @@
     <label>Duration (hours) <small class="hint">0 = permanent.</small>
       <input type="number" name="hours" value="4" min="0" step="1">
     </label>
+    <label>Game <small class="hint">Which game is this key for? It will only unlock that game's hub.</small>
+      <select name="game_id">
+        <option value="">Any game (works everywhere)</option>
+        <% (games || []).forEach(function(g) { %>
+          <option value="<%= g.id %>"><%= g.title %></option>
+        <% }); %>
+      </select>
+    </label>
     <label class="checkrow">
       <input type="checkbox" name="bind_hwid" value="1">
       <span>Lock to the first device (HWID) — optional; keys just ping you on new devices either way</span>
@@ -43,7 +51,7 @@
           <div class="admin-row-main">
             <span class="admin-row-title"><code><%= k.key %></code></span>
             <span class="muted">
-              <%= status %><% if (k.note) { %> · <%= k.note %><% } %><% if (k.hwid) { %> · HWID <%= k.hwid.substring(0, 16) %><% } %><% if (k.expires_at) { %> · expires <%= k.expires_at.replace('T', ' ').substring(0, 16) %> UTC<% } else { %> · permanent<% } %><% if (!k.bind_hwid) { %> · not locked<% } %>
+              <%= status %><% if (k.game_title) { %> · <span class="badge-game"><%= k.game_title %></span><% } else { %> · any game<% } %><% if (k.note) { %> · <%= k.note %><% } %><% if (k.hwid) { %> · HWID <%= k.hwid.substring(0, 16) %><% } %><% if (k.expires_at) { %> · expires <%= k.expires_at.replace('T', ' ').substring(0, 16) %> UTC<% } else { %> · permanent<% } %><% if (!k.bind_hwid) { %> · not locked<% } %>
             </span>
           </div>
           <div class="admin-row-actions">

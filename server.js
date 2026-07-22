@@ -324,7 +324,23 @@ function alertKeyUsed(key, hwid, allHwids) {
 // keeps working on all of them. bind_hwid is just an opt-in flag (set via the bot)
 // that adds an activation notice; to actually cut off a sharer, disable the key
 // (/revoke). Returns { ok, reason }.
-function validateKeyAuth(key, hwid) {
+// Resolve a game reference (id, slug, or title) to its numeric id, or null.
+function resolveGameId(val) {
+  if (val == null || String(val).trim() === '') return null;
+  const s = String(val).trim();
+  const g = db.prepare(
+    'SELECT id FROM games WHERE id = ? OR slug = ? OR lower(title) = lower(?)'
+  ).get(Number(s) || -1, s, s);
+  return g ? g.id : null;
+}
+function allGames() {
+  return db.prepare('SELECT id, title, slug FROM games ORDER BY sort_order ASC, title ASC').all();
+}
+
+// Validate a key + HWID for a given game. requiredGameId is the game a hub script
+// is tied to (or null/undefined if the script is open). A game-tied script only
+// accepts keys tied to that same game; open scripts accept any key.
+function validateKeyAuth(key, hwid, requiredGameId) {
   if (!key || !hwid) return { ok: false, reason: 'Missing key or HWID.' };
   let rec = db.prepare('SELECT * FROM keys WHERE key = ?').get(key);
 
@@ -337,14 +353,24 @@ function validateKeyAuth(key, hwid) {
       return { ok: false, reason: 'This key has expired. Get a fresh one from Discord.' };
     }
     const expiresIso = fk.expiresAtMs ? new Date(fk.expiresAtMs).toISOString() : null;
-    db.prepare('INSERT OR IGNORE INTO keys (key, note, bind_hwid, expires_at) VALUES (?, ?, 0, ?)')
-      .run(key, 'discord free key', expiresIso);
+    // A free key may name its game (fk.game / fk.gameSlug); tie it on import.
+    const fkGameId = resolveGameId(fk.game || fk.gameSlug || fk.game_id);
+    db.prepare('INSERT OR IGNORE INTO keys (key, note, bind_hwid, expires_at, game_id) VALUES (?, ?, 0, ?, ?)')
+      .run(key, 'discord free key', expiresIso, fkGameId);
     rec = db.prepare('SELECT * FROM keys WHERE key = ?').get(key);
     if (!rec) return { ok: false, reason: 'Invalid key.' };
   }
   if (rec.disabled) return { ok: false, reason: 'This key has been disabled.' };
   if (rec.expires_at && new Date(rec.expires_at).getTime() < Date.now()) {
     return { ok: false, reason: 'This key has expired. Generate a new one.' };
+  }
+
+  // --- Per-game gate: a game-tied hub only accepts a key tied to the same game ---
+  if (requiredGameId != null) {
+    if (rec.game_id == null || Number(rec.game_id) !== Number(requiredGameId)) {
+      const g = db.prepare('SELECT title FROM games WHERE id = ?').get(requiredGameId);
+      return { ok: false, reason: `This key isn't valid for ${g ? g.title : 'this game'}.` };
+    }
   }
 
   // --- HWID tracking (every key) ---
@@ -405,7 +431,7 @@ app.get('/s/:slug', (req, res) => {
   res.set('Cache-Control', 'no-store');
   if (!script) return res.status(404).send('-- script not found');
   if (!script.protected) return res.send(script.content);
-  const check = validateKeyAuth(String(req.query.key || ''), String(req.query.hwid || ''));
+  const check = validateKeyAuth(String(req.query.key || ''), String(req.query.hwid || ''), script.game_id);
   if (!check.ok) return res.send(denyLua(check.reason));
   // Per-buyer watermark: stamp a unique marker (hash of key+HWID) into the
   // obfuscated payload so a leaked dump traces back to who it was served to.
@@ -441,6 +467,14 @@ app.post('/api/keys', express.json(), (req, res) => {
   const hours = body.hours == null ? 4 : parseFloat(body.hours);
   const expires = hours > 0 ? new Date(Date.now() + hours * 3600 * 1000).toISOString() : null;
 
+  // Optional: tie the key to a game (id, slug, or title). The bot passes this so
+  // each game's keys are separate. Unknown game = 400 (don't mint an unbound key).
+  let gameId = null;
+  if (body.game != null && String(body.game).trim() !== '') {
+    gameId = resolveGameId(body.game);
+    if (gameId == null) return res.status(400).json({ ok: false, error: `Unknown game "${body.game}".` });
+  }
+
   // Use the key the bot supplies, or mint one and return it if it didn't send one.
   let key = body.key ? String(body.key).trim().slice(0, 100) : null;
   if (!key) {
@@ -451,9 +485,9 @@ app.post('/api/keys', express.json(), (req, res) => {
     return res.status(409).json({ ok: false, error: 'Key already exists.', key });
   }
 
-  db.prepare('INSERT INTO keys (key, note, discord_id, bind_hwid, expires_at) VALUES (?, ?, ?, ?, ?)')
-    .run(key, note, discordId, bindHwid, expires);
-  return res.json({ ok: true, key, expires_at: expires, bind_hwid: bindHwid });
+  db.prepare('INSERT INTO keys (key, note, discord_id, bind_hwid, expires_at, game_id) VALUES (?, ?, ?, ?, ?, ?)')
+    .run(key, note, discordId, bindHwid, expires, gameId);
+  return res.json({ ok: true, key, expires_at: expires, bind_hwid: bindHwid, game_id: gameId });
 });
 
 // Revoke (disable) a key early — e.g. the bot cleaning up on demand.
@@ -802,29 +836,31 @@ app.get('/admin/scripts', requireAdmin, (req, res) => {
   res.render('admin/scripts', { scripts, base: baseUrl(req) });
 });
 app.get('/admin/scripts/new', requireAdmin, (req, res) => {
-  res.render('admin/script-form', { script: null });
+  res.render('admin/script-form', { script: null, games: allGames() });
 });
 app.post('/admin/scripts', requireAdmin, (req, res) => {
   const name = String(req.body.name || '').trim();
   if (!name) { flash(req, 'error', 'Script needs a name.'); return res.redirect('/admin/scripts/new'); }
   const slug = uniqueScriptSlug(req.body.slug ? String(req.body.slug) : name);
-  db.prepare('INSERT INTO scripts (slug, name, content, protected) VALUES (?, ?, ?, ?)')
-    .run(slug, name, String(req.body.content || ''), req.body.protected ? 1 : 0);
+  const gameId = req.body.game_id ? (resolveGameId(req.body.game_id) || null) : null;
+  db.prepare('INSERT INTO scripts (slug, name, content, protected, game_id) VALUES (?, ?, ?, ?, ?)')
+    .run(slug, name, String(req.body.content || ''), req.body.protected ? 1 : 0, gameId);
   flash(req, 'success', `Created script "${name}".`);
   res.redirect('/admin/scripts');
 });
 app.get('/admin/scripts/:id/edit', requireAdmin, (req, res) => {
   const script = db.prepare('SELECT * FROM scripts WHERE id = ?').get(req.params.id);
   if (!script) return res.status(404).render('404');
-  res.render('admin/script-form', { script });
+  res.render('admin/script-form', { script, games: allGames() });
 });
 app.post('/admin/scripts/:id', requireAdmin, (req, res) => {
   const script = db.prepare('SELECT * FROM scripts WHERE id = ?').get(req.params.id);
   if (!script) return res.status(404).render('404');
   const name = String(req.body.name || '').trim() || script.name;
   const slug = uniqueScriptSlug(req.body.slug ? String(req.body.slug) : name, script.id);
-  db.prepare("UPDATE scripts SET name = ?, slug = ?, content = ?, protected = ?, updated_at = datetime('now') WHERE id = ?")
-    .run(name, slug, String(req.body.content || ''), req.body.protected ? 1 : 0, script.id);
+  const gameId = req.body.game_id ? (resolveGameId(req.body.game_id) || null) : null;
+  db.prepare("UPDATE scripts SET name = ?, slug = ?, content = ?, protected = ?, game_id = ?, updated_at = datetime('now') WHERE id = ?")
+    .run(name, slug, String(req.body.content || ''), req.body.protected ? 1 : 0, gameId, script.id);
   flash(req, 'success', 'Script saved.');
   res.redirect('/admin/scripts');
 });
@@ -836,17 +872,20 @@ app.post('/admin/scripts/:id/delete', requireAdmin, (req, res) => {
 
 // ---- Keys ----
 app.get('/admin/keys', requireAdmin, (req, res) => {
-  const keys = db.prepare('SELECT * FROM keys ORDER BY id DESC').all();
-  res.render('admin/keys', { keys });
+  const keys = db.prepare(
+    'SELECT k.*, g.title AS game_title FROM keys k LEFT JOIN games g ON g.id = k.game_id ORDER BY k.id DESC'
+  ).all();
+  res.render('admin/keys', { keys, games: allGames() });
 });
 app.post('/admin/keys', requireAdmin, (req, res) => {
   const note = String(req.body.note || '').trim();
   const hours = parseFloat(req.body.hours || '0');
   const expires = hours > 0 ? new Date(Date.now() + hours * 3600 * 1000).toISOString() : null;
+  const gameId = req.body.game_id ? (resolveGameId(req.body.game_id) || null) : null;
   let key;
   do { key = genKeyString(); } while (db.prepare('SELECT 1 FROM keys WHERE key = ?').get(key));
-  db.prepare('INSERT INTO keys (key, note, bind_hwid, expires_at) VALUES (?, ?, ?, ?)')
-    .run(key, note, req.body.bind_hwid ? 1 : 0, expires);
+  db.prepare('INSERT INTO keys (key, note, bind_hwid, expires_at, game_id) VALUES (?, ?, ?, ?, ?)')
+    .run(key, note, req.body.bind_hwid ? 1 : 0, expires, gameId);
   flash(req, 'success', `Generated key ${key}`);
   res.redirect('/admin/keys');
 });

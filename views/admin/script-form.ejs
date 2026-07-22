@@ -25,6 +25,15 @@
       <span>Protected — require a valid key (+ HWID) to fetch this script</span>
     </label>
 
+    <label>Game <small class="hint">Tie this hub to one game. Only keys for that game will unlock it. "Any game" = open to every key (legacy).</small>
+      <select name="game_id">
+        <option value="">Any game (open)</option>
+        <% (games || []).forEach(function(g) { %>
+          <option value="<%= g.id %>" <%= script && String(script.game_id) === String(g.id) ? 'selected' : '' %>><%= g.title %></option>
+        <% }); %>
+      </select>
+    </label>
+
     <label>Content <small class="hint">The raw Lua served at the URL.</small>
       <textarea name="content" rows="18" spellcheck="false" placeholder="-- paste your Lua here"><%= script ? script.content : '' %></textarea>
     </label>

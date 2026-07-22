@@ -95,6 +95,11 @@ function ensureColumn(table, column, type) {
 ensureColumn('users', 'username', 'TEXT');
 ensureColumn('users', 'display_name', 'TEXT');
 ensureColumn('users', 'pending_email', 'TEXT');
+// Per-game keys: a key can be tied to one game, and a hub script can be tied to
+// one game. A game-tied script only accepts keys tied to that same game.
+// NULL on either side = "not tied" (legacy/open) so existing keys keep working.
+ensureColumn('keys', 'game_id', 'INTEGER');
+ensureColumn('scripts', 'game_id', 'INTEGER');
 // Enforce unique usernames (SQLite allows multiple NULLs, which is fine).
 db.exec('CREATE UNIQUE INDEX IF NOT EXISTS idx_users_username ON users(username)');
 
