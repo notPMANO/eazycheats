@@ -128,6 +128,9 @@ const GAMES = [
     emoji: '🔷',
     keyPrefix: 'PD-Free-Key-',
     renameFrom: {},
+    // Not released yet: no picker button, nobody can get the role. The category +
+    // channels stay (structure kept, staff-visible). Flip to false to release.
+    hidden: true,
   },
 ];
 

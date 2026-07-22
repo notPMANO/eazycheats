@@ -277,7 +277,7 @@ client.once('clientReady', async () => {
           channel = await guild.channels.create(opts);
           console.log(`    + created game ${isForum ? 'forum' : 'channel'}: #${name}`);
         }
-        if (tmpl.freekeyPanel) {
+        if (tmpl.freekeyPanel && !game.hidden) {
           await ensurePanel(channel, hasButton(`freekey_request_${game.key}`), () => buildFreeKeyPanel(game), `${game.name} free-key panel`);
         }
       }
@@ -307,7 +307,17 @@ client.once('clientReady', async () => {
 
     await ensurePanel(welcomeInfoChannel, hasEmbedTitle('Welcome to EazyCheats!'), () => buildWelcomeInfo(verifyPanelChannel), 'welcome intro');
     await ensurePanel(verifyPanelChannel, hasButton('verify_agree'), () => buildVerifyPanel(RULES), 'rules gate panel');
-    await ensurePanel(gamePickerChannel, hasButton(`game_toggle_${GAMES[0].key}`), () => buildGamePicker(GAMES), 'game picker');
+    // Picker only lists released games. Remove a stale picker that still shows a hidden one.
+    const visibleGames = GAMES.filter((g) => !g.hidden);
+    const hiddenGameBtns = GAMES.filter((g) => g.hidden).map((g) => `game_toggle_${g.key}`);
+    if (gamePickerChannel && hiddenGameBtns.length) {
+      const msgs = await gamePickerChannel.messages.fetch({ limit: 20 }).catch(() => null);
+      if (msgs) for (const m of msgs.values()) {
+        if (m.author.id === client.user.id && hiddenGameBtns.some((id) => hasButton(id)(m))) { await m.delete().catch(() => {}); console.log('  ~ removed stale game picker (listed a hidden game)'); }
+      }
+    }
+    const pickerOk = (m) => visibleGames.every((g) => hasButton(`game_toggle_${g.key}`)(m)) && !hiddenGameBtns.some((id) => hasButton(id)(m));
+    await ensurePanel(gamePickerChannel, pickerOk, () => buildGamePicker(visibleGames), 'game picker');
 
     // The ticket panel dropped its free-key button — remove the old version so
     // the support-only panel gets posted.

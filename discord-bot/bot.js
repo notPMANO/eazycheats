@@ -230,6 +230,7 @@ const freeKeyGameKey = (ch) => freeKeyParts(ch)[1] || null;
 async function toggleGame(interaction, gameKey) {
   const game = gameByKey(gameKey);
   if (!game) return interaction.reply({ content: '⚠️ Unknown game.', ...EPHEMERAL });
+  if (game.hidden) return interaction.reply({ content: `🔒 **${game.name}** isn't available yet — stay tuned!`, ...EPHEMERAL });
   const role = interaction.guild.roles.cache.find((r) => r.name === game.role);
   if (!role) return interaction.reply({ content: `⚠️ The **${game.role}** role is missing — tell staff.`, ...EPHEMERAL });
   const member = interaction.member;
