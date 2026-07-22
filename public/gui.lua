@@ -187,9 +187,25 @@ function Library.new(config)
     local mouseBound = false
     local scrollBound = false
 
+    -- Modal button: while it's Visible the engine keeps the cursor free and IGNORES any
+    -- script that tries to lock it to screen-center. This is what actually stops the
+    -- "cursor jumps to the middle when I scroll the menu" bug — the game's scroll/zoom
+    -- handler can no longer recenter the mouse while the menu is open.
+    local modalBtn = Instance.new("TextButton")
+    modalBtn.Name = "EC_Modal"
+    modalBtn.Modal = true
+    modalBtn.Visible = false
+    modalBtn.Text = ""
+    modalBtn.AutoButtonColor = false
+    modalBtn.BackgroundTransparency = 1
+    modalBtn.Size = UDim2.new(0, 1, 0, 1)
+    modalBtn.Position = UDim2.new(0, -10, 0, -10)   -- off-screen; only its Modal flag matters
+    modalBtn.Parent = self.gui
+
     local function bindMouse()
         if mouseBound then return end
         mouseBound = true
+        modalBtn.Visible = true                      -- engage modal free-cursor
         pcall(function()
             RunService:BindToRenderStep(MOUSE_BIND, Enum.RenderPriority.Camera.Value + 1, function()
                 UserInputService.MouseBehavior = Enum.MouseBehavior.Default
@@ -200,6 +216,7 @@ function Library.new(config)
     local function unbindMouse()
         if not mouseBound then return end
         mouseBound = false
+        modalBtn.Visible = false                     -- hand cursor control back to the game
         pcall(function() RunService:UnbindFromRenderStep(MOUSE_BIND) end)
     end
 
