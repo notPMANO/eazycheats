@@ -13,7 +13,7 @@ const {
   PREMIUM_KEY_SAFE_CHANNEL, PREMIUM_KEY_DEFAULT_LENGTH,
   PREMIUM_KEY_MIN_LENGTH, PREMIUM_KEY_MAX_LENGTH, KEY_ALERTS_CHANNEL, GAMES,
 } = require('./config');
-const { buildTicketWelcome } = require('./ticket-panel');
+const { buildTicketWelcome, buildGamePicker } = require('./ticket-panel');
 const { buildWelcomeGreeting } = require('./welcome');
 const {
   generateKey, generateFreeKey, generatePremiumKey, addKey, updateKey, getKeys, findKey, latestKeyForUser,
@@ -158,14 +158,19 @@ async function verifyMember(interaction) {
     return interaction.reply({ content: `⚠️ The **${VERIFIED_ROLE}** role is missing — please let staff know.`, ...EPHEMERAL });
   }
   const member = interaction.member;
-  if (member.roles.cache.has(role.id)) {
-    return interaction.reply({ content: "✅ You're already verified — you have full access!", ...EPHEMERAL });
+  const already = member.roles.cache.has(role.id);
+  if (!already) await member.roles.add(role, 'Agreed to the rules');
+
+  // After verifying (or if already verified), let them pick their games — right here.
+  const visibleGames = GAMES.filter((g) => !g.hidden);
+  const intro = already
+    ? "✅ You're verified. Pick or change the games you want to see:"
+    : `✅ Thanks for agreeing! You now have the **${role.name}** role. Now pick the games you're interested in:`;
+  if (!visibleGames.length) {
+    return interaction.reply({ content: intro.replace(/ (Pick|Now pick).*/, ' 🎉'), ...EPHEMERAL });
   }
-  await member.roles.add(role, 'Agreed to the rules');
-  return interaction.reply({
-    content: `✅ Thanks for agreeing! You now have the **${role.name}** role and full access to the server. Welcome aboard! 🎉`,
-    ...EPHEMERAL,
-  });
+  const picker = buildGamePicker(visibleGames);
+  return interaction.reply({ content: intro, embeds: picker.embeds, components: picker.components, ...EPHEMERAL });
 }
 
 // ---------- Tickets ----------
@@ -237,6 +242,11 @@ async function toggleGame(interaction, gameKey) {
   const game = gameByKey(gameKey);
   if (!game) return interaction.reply({ content: '⚠️ Unknown game.', ...EPHEMERAL });
   if (game.hidden) return interaction.reply({ content: `🔒 **${game.name}** isn't available yet — stay tuned!`, ...EPHEMERAL });
+  // Must be verified first (defense — the picker only appears after verifying).
+  const verifiedRole = interaction.guild.roles.cache.find((r) => r.name === VERIFIED_ROLE);
+  if (verifiedRole && !interaction.member.roles.cache.has(verifiedRole.id)) {
+    return interaction.reply({ content: '⚠️ Agree to the rules in #verify first.', ...EPHEMERAL });
+  }
   const role = interaction.guild.roles.cache.find((r) => r.name === game.role);
   if (!role) return interaction.reply({ content: `⚠️ The **${game.role}** role is missing — tell staff.`, ...EPHEMERAL });
   const member = interaction.member;

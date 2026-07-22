@@ -185,10 +185,8 @@ const CATEGORIES = [
     channels: [
       // Public greeting channel — the bot posts a welcome here when someone joins.
       { name: 'welcome', access: 'public', readonly: true, welcomeInfo: true, topic: 'New members get greeted here. Head to #verify to unlock the server.' },
-      // The gate: visible to everyone, holds the rules + Agree button.
-      { name: 'verify', access: 'public', readonly: true, verifyPanel: true, topic: 'Read the rules and click Agree to unlock the server.' },
-      // Game picker — click a button to unlock a game's channels.
-      { name: 'choose-your-games', readonly: true, gamePicker: true, topic: 'Pick which games you want to see. Click a button to unlock its channels.' },
+      // The gate: agree to the rules, then pick your games (all in one channel).
+      { name: 'verify', access: 'public', readonly: true, verifyPanel: true, topic: 'Agree to the rules, then choose the games you want to see.' },
       { name: 'rules',          readonly: true,  topic: 'Server rules. Breaking them = warning, mute, or ban.' },
       { name: 'announcements',  readonly: true,  topic: 'Official EazyCheats announcements.' },
     ],

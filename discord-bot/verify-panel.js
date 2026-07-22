@@ -9,9 +9,9 @@ function buildVerifyPanel(rules) {
     .setTitle('👋 Welcome to EazyCheats — Please Read the Rules')
     .setDescription(
       'The rest of the server is locked until you agree to the rules.\n' +
-      'Read them below, then click **✅ Agree to the Rules** to unlock every channel.\n\n' +
+      'Read them below, then click **✅ Agree to the Rules** — you\'ll then pick which games you want to see.\n\n' +
       rules.map((r, i) => `**${i + 1}.** ${r}`).join('\n') +
-      '\n\n_Clicking Agree gives you the **Free User** role and full access._'
+      '\n\n_Agreeing gives you access + a game picker. Already verified? Click again anytime to change your games._'
     )
     .setFooter({ text: 'EazyCheats — We make you better at games' });
 
