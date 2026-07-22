@@ -3,16 +3,15 @@ const {
   EmbedBuilder, ActionRowBuilder, ButtonBuilder, ButtonStyle,
 } = require('discord.js');
 
-// The panel that lives in #open-a-ticket.
+// The panel that lives in #open-a-ticket (support only — free keys moved into games).
 function buildTicketPanel() {
   const embed = new EmbedBuilder()
     .setColor(0x5865f2)
     .setTitle('🎫 EazyCheats Support')
     .setDescription(
-      'Pick an option below to open your own **private ticket**.\n\n' +
-      '🆘 **Request Help** — talk to our staff about any issue.\n' +
-      '🔑 **Request Free Key** — get an auto-generated free key (valid 4 hours).\n\n' +
-      'Only you and our staff can see your ticket. Check <#faq> and <#support-info> first!'
+      'Need help? Click the button below to open your own **private ticket**.\n\n' +
+      'Only you and our staff can see it. Check <#faq> and <#support-info> first!\n\n' +
+      '_Looking for a free key? Head to your game\'s **generate-free-key** channel._'
     )
     .setFooter({ text: 'EazyCheats — We make you better at games' });
 
@@ -21,10 +20,51 @@ function buildTicketPanel() {
       .setCustomId('ticket_open')
       .setLabel('Request Help')
       .setEmoji('🆘')
-      .setStyle(ButtonStyle.Primary),
+      .setStyle(ButtonStyle.Primary)
+  );
+
+  return { embeds: [embed], components: [row] };
+}
+
+// Game picker panel (in #choose-your-games) — one toggle button per game.
+function buildGamePicker(games) {
+  const embed = new EmbedBuilder()
+    .setColor(0x5865f2)
+    .setTitle('🎮 Choose Your Games')
+    .setDescription(
+      'Click a button to unlock that game\'s channels (suggestions, updates, ' +
+      'free keys, script). Click again to hide it.\n\n' +
+      games.map((g) => `${g.emoji} **${g.name}**`).join('\n')
+    )
+    .setFooter({ text: 'EazyCheats' });
+
+  const row = new ActionRowBuilder().addComponents(
+    games.map((g) => new ButtonBuilder()
+      .setCustomId(`game_toggle_${g.key}`)
+      .setLabel(g.name)
+      .setEmoji(g.emoji)
+      .setStyle(ButtonStyle.Secondary))
+  );
+
+  return { embeds: [embed], components: [row] };
+}
+
+// Free-key panel (in each game's <prefix>-freekey channel).
+function buildFreeKeyPanel(game) {
+  const embed = new EmbedBuilder()
+    .setColor(0x2ecc71)
+    .setTitle(`${game.emoji} ${game.name} — Free Key`)
+    .setDescription(
+      'Click below to open your private key ticket and get an auto-generated ' +
+      `**free key** for ${game.name} (valid 4 hours).\n\n` +
+      'You get one ticket — when your key expires, press **Get New Key** inside it.'
+    )
+    .setFooter({ text: 'EazyCheats — free key' });
+
+  const row = new ActionRowBuilder().addComponents(
     new ButtonBuilder()
-      .setCustomId('freekey_request')
-      .setLabel('Request Free Key')
+      .setCustomId(`freekey_request_${game.key}`)
+      .setLabel('Generate Free Key')
       .setEmoji('🔑')
       .setStyle(ButtonStyle.Success)
   );
@@ -55,4 +95,4 @@ function buildTicketWelcome(userId, staffMention) {
   return { content: `<@${userId}>`, embeds: [embed], components: [row] };
 }
 
-module.exports = { buildTicketPanel, buildTicketWelcome };
+module.exports = { buildTicketPanel, buildTicketWelcome, buildGamePicker, buildFreeKeyPanel };

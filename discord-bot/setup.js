@@ -11,8 +11,9 @@ const {
 const {
   ROLES, STAFF_ROLES, TICKET_STAFF_ROLES, MOD_ROLES, RULES, CATEGORIES,
   TICKET_CATEGORY, FREE_KEY_TICKET_CATEGORY,
+  GAMES, GAME_CHANNELS, SUGGESTION_TAGS,
 } = require('./config');
-const { buildTicketPanel } = require('./ticket-panel');
+const { buildTicketPanel, buildGamePicker, buildFreeKeyPanel } = require('./ticket-panel');
 const { buildVerifyPanel } = require('./verify-panel');
 const { buildWelcomeInfo } = require('./welcome');
 
@@ -131,6 +132,21 @@ client.once('clientReady', async () => {
       return ow;
     }
 
+    // Overwrites for a game channel: hidden from @everyone; the game role can
+    // view (+ talk unless readonly); all staff can see + moderate.
+    function gameOverwrites(roleObj, readonly, isForum) {
+      const ow = [];
+      const forumExtra = isForum ? [P.SendMessagesInThreads, P.CreatePublicThreads] : [];
+      const everyoneDeny = readonly ? [P.ViewChannel, P.SendMessages] : [P.ViewChannel];
+      ow.push({ id: everyone.id, deny: everyoneDeny });
+      const allow = readonly ? [P.ViewChannel, P.ReadMessageHistory, ...forumExtra]
+        : [P.ViewChannel, P.SendMessages, P.ReadMessageHistory, P.AddReactions, ...forumExtra];
+      if (roleObj) ow.push({ id: roleObj.id, allow });
+      const staffAllow = [P.ViewChannel, P.SendMessages, P.ReadMessageHistory, P.Connect, P.Speak, P.AddReactions, ...forumExtra];
+      for (const sr of staffRoleObjs) ow.push({ id: sr.id, allow: staffAllow });
+      return ow;
+    }
+
     // -------- 2. CATEGORIES + CHANNELS --------
     const allChannels = await guild.channels.fetch();
     const findChannel = (name, type) =>
@@ -157,6 +173,7 @@ client.once('clientReady', async () => {
     let ticketPanelChannel = null;
     let verifyPanelChannel = null;
     let welcomeInfoChannel = null;
+    let gamePickerChannel = null;
 
     for (const catDef of CATEGORIES) {
       const category = await ensureCategory(catDef.name, catDef.access);
@@ -195,6 +212,7 @@ client.once('clientReady', async () => {
         if (ch.ticketPanel) ticketPanelChannel = channel;
         if (ch.verifyPanel) verifyPanelChannel = channel;
         if (ch.welcomeInfo) welcomeInfoChannel = channel;
+        if (ch.gamePicker) gamePickerChannel = channel;
       }
     }
 
@@ -202,15 +220,6 @@ client.once('clientReady', async () => {
     await ensureCategory(TICKET_CATEGORY, 'ticketstaff');
     // Category that holds live free-key tickets (mods only).
     await ensureCategory(FREE_KEY_TICKET_CATEGORY, 'modonly');
-
-    // Pin the key-system categories to the very bottom of the channel list.
-    async function moveToBottom(name) {
-      const fresh = await guild.channels.fetch();
-      const cat = fresh.find((c) => c && c.type === ChannelType.GuildCategory && c.name === name);
-      if (cat) { await cat.setPosition(999).catch(() => {}); console.log(`  ~ pinned to bottom: ${name}`); }
-    }
-    for (const catDef of CATEGORIES) if (catDef.bottom) await moveToBottom(catDef.name);
-    await moveToBottom(FREE_KEY_TICKET_CATEGORY); // free-key tickets sit at the very bottom
 
     // Helpers to dedupe an existing panel by button id or by embed title.
     const hasButton = (id) => (m) =>
@@ -223,48 +232,92 @@ client.once('clientReady', async () => {
       if (!channel) return;
       const recent = await channel.messages.fetch({ limit: 20 }).catch(() => null);
       const already = recent && recent.find((m) => m.author.id === client.user.id && matches(m));
-      if (already) {
-        console.log(`  = ${label} already posted in #${channel.name}`);
-      } else {
-        await channel.send(build());
-        console.log(`  + posted ${label} in #${channel.name}`);
-      }
+      if (already) console.log(`  = ${label} already posted in #${channel.name}`);
+      else { await channel.send(build()); console.log(`  + posted ${label} in #${channel.name}`); }
     }
 
-    // -------- 3. PANELS --------
+    // -------- GAME SECTIONS (role-gated category + same channels per game) --------
+    console.log('');
+    for (const game of GAMES) {
+      const roleObj = roleByName[game.role];
+      const catOw = gameOverwrites(roleObj, false, true);
+      let cat = findChannel(game.category, ChannelType.GuildCategory);
+      if (cat) {
+        await cat.permissionOverwrites.set(catOw, 'EazyCheats game setup');
+        console.log(`  = game category exists: ${game.category}`);
+      } else {
+        cat = await guild.channels.create({ name: game.category, type: ChannelType.GuildCategory, permissionOverwrites: catOw, reason: 'EazyCheats game setup' });
+        console.log(`  + created game category: ${game.category}`);
+      }
+
+      for (const tmpl of GAME_CHANNELS) {
+        const name = `${game.prefix}-${tmpl.suffix}`;
+        const isForum = tmpl.type === 'forum';
+        const type = isForum ? ChannelType.GuildForum : ChannelType.GuildText;
+        const ow = gameOverwrites(roleObj, tmpl.readonly, isForum);
+        let channel = findChannel(name, type);
+        // Adopt an existing channel (rename in place) if configured — keeps messages.
+        if (!channel && game.renameFrom && game.renameFrom[tmpl.suffix]) {
+          const old = findChannel(game.renameFrom[tmpl.suffix], type);
+          if (old) { await old.setName(name).catch(() => {}); channel = old; console.log(`    ~ renamed #${game.renameFrom[tmpl.suffix]} -> #${name}`); }
+        }
+        if (channel) {
+          if (channel.parentId !== cat.id) await channel.setParent(cat.id, { lockPermissions: false }).catch(() => {});
+          await channel.permissionOverwrites.set(ow, 'EazyCheats game setup');
+          console.log(`    = game channel: #${name}`);
+        } else {
+          const opts = { name, type, parent: cat.id, permissionOverwrites: ow, reason: 'EazyCheats game setup' };
+          if (isForum) {
+            opts.topic = `${game.name} suggestions — one idea per post, tag it, and 👍 the ones you want.`;
+            opts.availableTags = SUGGESTION_TAGS;
+            opts.defaultReactionEmoji = { name: '👍' };
+          } else {
+            opts.topic = `${game.name} — ${tmpl.suffix}.`;
+          }
+          channel = await guild.channels.create(opts);
+          console.log(`    + created game ${isForum ? 'forum' : 'channel'}: #${name}`);
+        }
+        if (tmpl.freekeyPanel) {
+          await ensurePanel(channel, hasButton(`freekey_request_${game.key}`), () => buildFreeKeyPanel(game), `${game.name} free-key panel`);
+        }
+      }
+      // Position each game category near the top (after INFORMATION + SUPPORT).
+      await cat.setPosition(2 + GAMES.indexOf(game)).catch(() => {});
+    }
+
+    // Pin the key-system categories to the very bottom of the channel list.
+    async function moveToBottom(name) {
+      const fresh = await guild.channels.fetch();
+      const cat = fresh.find((c) => c && c.type === ChannelType.GuildCategory && c.name === name);
+      if (cat) { await cat.setPosition(999).catch(() => {}); console.log(`  ~ pinned to bottom: ${name}`); }
+    }
+    for (const catDef of CATEGORIES) if (catDef.bottom) await moveToBottom(catDef.name);
+    await moveToBottom(FREE_KEY_TICKET_CATEGORY);
+
+    // -------- PANELS --------
     console.log('');
 
-    // The rules gate now lives ONLY in #verify — remove any stray gate that
-    // used to be posted in #welcome.
+    // The rules gate lives ONLY in #verify — remove any stray gate in #welcome.
     if (welcomeInfoChannel && verifyPanelChannel && welcomeInfoChannel.id !== verifyPanelChannel.id) {
       const msgs = await welcomeInfoChannel.messages.fetch({ limit: 20 }).catch(() => null);
-      if (msgs) {
-        for (const m of msgs.values()) {
-          if (m.author.id === client.user.id && hasButton('verify_agree')(m)) {
-            await m.delete().catch(() => {});
-            console.log('  ~ removed stray rules gate from #welcome');
-          }
-        }
+      if (msgs) for (const m of msgs.values()) {
+        if (m.author.id === client.user.id && hasButton('verify_agree')(m)) { await m.delete().catch(() => {}); console.log('  ~ removed stray rules gate from #welcome'); }
       }
     }
 
     await ensurePanel(welcomeInfoChannel, hasEmbedTitle('Welcome to EazyCheats!'), () => buildWelcomeInfo(verifyPanelChannel), 'welcome intro');
     await ensurePanel(verifyPanelChannel, hasButton('verify_agree'), () => buildVerifyPanel(RULES), 'rules gate panel');
+    await ensurePanel(gamePickerChannel, hasButton(`game_toggle_${GAMES[0].key}`), () => buildGamePicker(GAMES), 'game picker');
 
-    // The ticket panel gained a second button (Request Free Key) — remove any
-    // old single-button panel so it gets re-posted with both buttons.
+    // The ticket panel dropped its free-key button — remove the old version so
+    // the support-only panel gets posted.
     if (ticketPanelChannel) {
       const msgs = await ticketPanelChannel.messages.fetch({ limit: 20 }).catch(() => null);
-      if (msgs) {
-        for (const m of msgs.values()) {
-          if (m.author.id === client.user.id && hasButton('ticket_open')(m) && !hasButton('freekey_request')(m)) {
-            await m.delete().catch(() => {});
-            console.log('  ~ removed outdated ticket panel (single button)');
-          }
-        }
+      if (msgs) for (const m of msgs.values()) {
+        if (m.author.id === client.user.id && hasButton('freekey_request')(m)) { await m.delete().catch(() => {}); console.log('  ~ removed old ticket panel (had free-key button)'); }
       }
     }
-    await ensurePanel(ticketPanelChannel, hasButton('freekey_request'), () => buildTicketPanel(), 'ticket panel');
+    await ensurePanel(ticketPanelChannel, (m) => hasButton('ticket_open')(m) && !hasButton('freekey_request')(m), () => buildTicketPanel(), 'ticket panel');
 
     console.log('\n✅ Server setup complete!\n');
     console.log('   New members are greeted in #welcome and must click "Agree to the Rules" in #verify.');

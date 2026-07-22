@@ -40,6 +40,22 @@ const ROLES = [
     mentionable: false,
     perms: [],
   },
+  // Game-access roles — granted via the #choose-your-games picker; they unlock
+  // each game's category. No special powers, just channel visibility.
+  {
+    name: 'Prior Extinction',
+    color: 0xe67e22, // orange
+    hoist: false,
+    mentionable: false,
+    perms: [],
+  },
+  {
+    name: 'Project Delta',
+    color: 0x1abc9c, // teal
+    hoist: false,
+    mentionable: false,
+    perms: [],
+  },
   {
     name: 'Free User',
     color: 0x95a5a6, // grey
@@ -74,6 +90,57 @@ const PREMIUM_KEY_SAFE_CHANNEL = 'premium-key-safe';
 
 // Channel where the bot pings on key-use / HWID alerts (mod-only).
 const KEY_ALERTS_CHANNEL = 'key-alerts';
+
+// Reusable suggestion-forum tags (used by each game's suggestions forum).
+const SUGGESTION_TAGS = [
+  { name: 'Feature',  emoji: { name: '💡' } },
+  { name: 'QOL',      emoji: { name: '🔧' } },
+  { name: 'Bug',      emoji: { name: '🐛' } },
+  { name: 'Approved', emoji: { name: '✅' }, moderated: true },
+  { name: 'Declined', emoji: { name: '❌' }, moderated: true },
+];
+
+// The channel (in INFORMATION) that holds the game picker.
+const GAME_PICKER_CHANNEL = 'choose-your-games';
+
+// --- GAMES ---
+// Each game gets its own role-gated category with the same set of channels,
+// prefixed by `prefix`. `renameFrom` adopts an existing channel (rename in
+// place, keeps messages) instead of creating a new one — used to turn the
+// current general/suggestions/updates into Prior Extinction's.
+const GAMES = [
+  {
+    key: 'prior',
+    name: 'Prior Extinction',
+    role: 'Prior Extinction',
+    category: '🩸 PRIOR EXTINCTION',
+    prefix: 'prior',
+    emoji: '🩸',
+    keyPrefix: 'Prior-Free-Key-',
+    renameFrom: { general: 'general', suggestions: 'suggestions', updates: 'updates' },
+  },
+  {
+    key: 'pd',
+    name: 'Project Delta',
+    role: 'Project Delta',
+    category: '🔷 PROJECT DELTA',
+    prefix: 'pd',
+    emoji: '🔷',
+    keyPrefix: 'PD-Free-Key-',
+    renameFrom: {},
+  },
+];
+
+// The channels every game gets (name = `<prefix>-<suffix>`).
+const GAME_CHANNELS = [
+  { suffix: 'general',     type: 'text' },
+  { suffix: 'suggestions', type: 'forum' },
+  { suffix: 'updates',     type: 'text', readonly: true },
+  { suffix: 'freekey',     type: 'text', readonly: true, freekeyPanel: true },
+  { suffix: 'script',      type: 'text', readonly: true },
+];
+
+const FREE_KEY_DIGITS_GAME = 12; // digits after each game's key prefix
 
 // Channel where closed-ticket transcripts get logged (in the STAFF category).
 const TICKET_LOG_CHANNEL = 'ticket-logs';
@@ -116,9 +183,10 @@ const CATEGORIES = [
       { name: 'welcome', access: 'public', readonly: true, welcomeInfo: true, topic: 'New members get greeted here. Head to #verify to unlock the server.' },
       // The gate: visible to everyone, holds the rules + Agree button.
       { name: 'verify', access: 'public', readonly: true, verifyPanel: true, topic: 'Read the rules and click Agree to unlock the server.' },
+      // Game picker — click a button to unlock a game's channels.
+      { name: 'choose-your-games', readonly: true, gamePicker: true, topic: 'Pick which games you want to see. Click a button to unlock its channels.' },
       { name: 'rules',          readonly: true,  topic: 'Server rules. Breaking them = warning, mute, or ban.' },
       { name: 'announcements',  readonly: true,  topic: 'Official EazyCheats announcements.' },
-      { name: 'updates',        readonly: true,  topic: 'Product & cheat updates, patch notes, undetected status.' },
       { name: 'faq',            readonly: true,  topic: 'Frequently asked questions before you open a ticket.' },
     ],
   },
@@ -128,28 +196,6 @@ const CATEGORIES = [
     channels: [
       { name: 'open-a-ticket',  readonly: true, ticketPanel: true, topic: 'Click the button to open a private support ticket.' },
       { name: 'support-info',   readonly: true, topic: 'How support works and what info to have ready.' },
-    ],
-  },
-  {
-    name: '💬 COMMUNITY',
-    access: 'member',
-    channels: [
-      // Forum channel — members create a post per suggestion and vote with 👍.
-      {
-        name: 'suggestions',
-        type: 'forum',
-        topic: 'Suggest features and QOL for the script — one idea per post. Search first to avoid duplicates, tag it, and 👍 the ideas you want to see!',
-        forum: {
-          defaultReaction: '👍',
-          tags: [
-            { name: 'Feature',  emoji: { name: '💡' } },
-            { name: 'QOL',      emoji: { name: '🔧' } },
-            { name: 'Bug',      emoji: { name: '🐛' } },
-            { name: 'Approved', emoji: { name: '✅' }, moderated: true },
-            { name: 'Declined', emoji: { name: '❌' }, moderated: true },
-          ],
-        },
-      },
     ],
   },
   {
@@ -207,4 +253,5 @@ module.exports = {
   PREMIUM_KEY_PREFIX, PREMIUM_KEY_DEFAULT_LENGTH,
   PREMIUM_KEY_MIN_LENGTH, PREMIUM_KEY_MAX_LENGTH, PREMIUM_KEY_SAFE_CHANNEL,
   KEY_ALERTS_CHANNEL,
+  GAMES, GAME_CHANNELS, GAME_PICKER_CHANNEL, SUGGESTION_TAGS, FREE_KEY_DIGITS_GAME,
 };

@@ -11,15 +11,17 @@ const {
   TICKET_STAFF_ROLES, MOD_ROLES, VERIFIED_ROLE, TICKET_CATEGORY, TICKET_LOG_CHANNEL,
   WELCOME_CHANNEL, FREE_KEY_TTL_HOURS, FREE_KEY_SAFE_CHANNEL, FREE_KEY_TICKET_CATEGORY,
   PREMIUM_KEY_SAFE_CHANNEL, PREMIUM_KEY_DEFAULT_LENGTH,
-  PREMIUM_KEY_MIN_LENGTH, PREMIUM_KEY_MAX_LENGTH, KEY_ALERTS_CHANNEL,
+  PREMIUM_KEY_MIN_LENGTH, PREMIUM_KEY_MAX_LENGTH, KEY_ALERTS_CHANNEL, GAMES,
 } = require('./config');
 const { buildTicketWelcome } = require('./ticket-panel');
 const { buildWelcomeGreeting } = require('./welcome');
 const {
-  generateKey, generatePremiumKey, addKey, updateKey, getKeys, findKey, latestKeyForUser,
+  generateKey, generateFreeKey, generatePremiumKey, addKey, updateKey, getKeys, findKey, latestKeyForUser,
   buildKeyTicketMessage, buildSafeEntry, buildPremiumKeyMessage, buildPremiumSafeEntry,
   buildHwidAlert,
 } = require('./freekey');
+
+const gameByKey = (k) => GAMES.find((g) => g.key === k) || null;
 
 const { DISCORD_TOKEN, GUILD_ID } = process.env;
 
@@ -120,11 +122,14 @@ client.once('clientReady', async () => {
 client.on('interactionCreate', async (interaction) => {
   try {
     if (interaction.isButton()) {
-      if (interaction.customId === 'verify_agree') return verifyMember(interaction);
-      if (interaction.customId === 'ticket_open') return openTicket(interaction);
-      if (interaction.customId === 'freekey_request') return requestFreeKey(interaction);
-      if (interaction.customId === 'freekey_new') return newFreeKey(interaction);
-      if (interaction.customId === 'ticket_close') return closeTicket(interaction);
+      const id = interaction.customId;
+      if (id === 'verify_agree') return verifyMember(interaction);
+      if (id === 'ticket_open') return openTicket(interaction);
+      if (id.startsWith('game_toggle_')) return toggleGame(interaction, id.slice('game_toggle_'.length));
+      if (id.startsWith('freekey_request_')) return requestFreeKey(interaction, id.slice('freekey_request_'.length));
+      if (id === 'freekey_request') return requestFreeKey(interaction, 'prior'); // legacy old panel → Prior
+      if (id === 'freekey_new') return newFreeKey(interaction);
+      if (id === 'ticket_close') return closeTicket(interaction);
     } else if (interaction.isChatInputCommand()) {
       if (interaction.commandName === 'add') return ticketAddRemove(interaction, true);
       if (interaction.commandName === 'remove') return ticketAddRemove(interaction, false);
@@ -171,7 +176,7 @@ const KEY_API_URL = process.env.KEY_API_URL || 'https://eazycheats.com/api/keys'
 
 // Register a generated key with the site's key API. Best-effort: never throws,
 // so a slow/down/not-yet-deployed API can't block issuing the key in Discord.
-async function registerKeyWithApi(key, hours, discordId, note = 'discord free key', bindHwid) {
+async function registerKeyWithApi(key, hours, discordId, note = 'discord free key', bindHwid, product) {
   const secret = process.env.BOT_API_SECRET;
   if (!secret) {
     console.warn('BOT_API_SECRET not set — key not registered with the API (Discord-only).');
@@ -179,6 +184,7 @@ async function registerKeyWithApi(key, hours, discordId, note = 'discord free ke
   }
   const payload = { key, hours, discord_id: discordId, note };
   if (bindHwid === true || bindHwid === false) payload.bind_hwid = bindHwid;
+  if (product) payload.product = product; // game tag so the site can game-lock the key
   try {
     const res = await fetch(KEY_API_URL, {
       method: 'POST',
@@ -214,17 +220,36 @@ async function callKeyApi(subpath, payload) {
   }
 }
 
+// Free-key ticket topic: `freekey-owner:<gameKey>:<userId>`.
 const isFreeKeyChannel = (ch) => ch && ch.topic && ch.topic.startsWith('freekey-owner:');
-const freeKeyOwnerId = (ch) => (isFreeKeyChannel(ch) ? ch.topic.split(':')[1] : null);
+const freeKeyParts = (ch) => (isFreeKeyChannel(ch) ? ch.topic.split(':') : []); // [ , gameKey, userId]
+const freeKeyOwnerId = (ch) => freeKeyParts(ch)[2] || null;
+const freeKeyGameKey = (ch) => freeKeyParts(ch)[1] || null;
 
-// Generate a key, register it, post it in the ticket, log it, persist, and
+// ---------- Game picker ----------
+async function toggleGame(interaction, gameKey) {
+  const game = gameByKey(gameKey);
+  if (!game) return interaction.reply({ content: '⚠️ Unknown game.', ...EPHEMERAL });
+  const role = interaction.guild.roles.cache.find((r) => r.name === game.role);
+  if (!role) return interaction.reply({ content: `⚠️ The **${game.role}** role is missing — tell staff.`, ...EPHEMERAL });
+  const member = interaction.member;
+  if (member.roles.cache.has(role.id)) {
+    await member.roles.remove(role, 'Game picker').catch(() => {});
+    return interaction.reply({ content: `➖ Hidden **${game.name}** — click again to show it.`, ...EPHEMERAL });
+  }
+  await member.roles.add(role, 'Game picker').catch(() => {});
+  return interaction.reply({ content: `${game.emoji} Unlocked **${game.name}** — its channels are now visible!`, ...EPHEMERAL });
+}
+
+// Generate a game key, register it, post it in the ticket, log it, persist, and
 // schedule expiry. All sends are silent so nobody gets pinged.
-async function issueKey(guild, channel, userId) {
-  const key = generateKey();
+async function issueKey(guild, channel, userId, game) {
+  const key = generateFreeKey(game.keyPrefix);
   const issuedAt = Date.now();
   const expiresAt = issuedAt + FREE_KEY_TTL_HOURS * 60 * 60 * 1000;
 
-  await registerKeyWithApi(key, FREE_KEY_TTL_HOURS, userId);
+  // Register the key with the site, tagged with the game so it can be game-locked.
+  await registerKeyWithApi(key, FREE_KEY_TTL_HOURS, userId, `${game.name} free key`, undefined, game.key);
 
   await channel.send({ ...buildKeyTicketMessage(key, userId, expiresAt), flags: SILENT }).catch(() => {});
 
@@ -234,13 +259,13 @@ async function issueKey(guild, channel, userId) {
   let safeMsg = null;
   if (safe) {
     safeMsg = await safe.send({
-      ...buildSafeEntry({ key, userId, ticketChannelId: channel.id, issuedAtMs: issuedAt, expiresAtMs: expiresAt, status: 'active' }),
+      ...buildSafeEntry({ key, userId, ticketChannelId: channel.id, issuedAtMs: issuedAt, expiresAtMs: expiresAt, status: 'active', gameName: game.name }),
       flags: SILENT,
     }).catch(() => null);
   }
 
   const rec = {
-    key, userId, ticketChannelId: channel.id,
+    key, userId, game: game.key, gameName: game.name, ticketChannelId: channel.id,
     safeChannelId: safe ? safe.id : null, safeMessageId: safeMsg ? safeMsg.id : null,
     issuedAt, expiresAt, status: 'active',
   };
@@ -249,18 +274,20 @@ async function issueKey(guild, channel, userId) {
   return rec;
 }
 
-async function requestFreeKey(interaction) {
+async function requestFreeKey(interaction, gameKey) {
   const guild = interaction.guild;
   const opener = interaction.user;
+  const game = gameByKey(gameKey);
+  if (!game) return interaction.reply({ content: '⚠️ Unknown game.', ...EPHEMERAL });
   await interaction.deferReply(EPHEMERAL);
 
-  // One free-key ticket per person — point them back to their existing one.
+  // One free-key ticket per person PER GAME — point them back to their existing one.
   const existing = guild.channels.cache.find(
-    (c) => c.type === ChannelType.GuildText && c.topic === `freekey-owner:${opener.id}`
+    (c) => c.type === ChannelType.GuildText && c.topic === `freekey-owner:${game.key}:${opener.id}`
   );
   if (existing) {
     return interaction.editReply({
-      content: `❗ You already have a free-key ticket: <#${existing.id}> — use the **Get New Key** button there when your key expires.`,
+      content: `❗ You already have a ${game.name} free-key ticket: <#${existing.id}> — use the **Get New Key** button there when your key expires.`,
     });
   }
 
@@ -286,28 +313,29 @@ async function requestFreeKey(interaction) {
   ];
 
   const channel = await guild.channels.create({
-    name: `freekey-${sanitizeName(opener.username)}`,
+    name: `${game.prefix}-fk-${sanitizeName(opener.username)}`,
     type: ChannelType.GuildText,
     parent: category ? category.id : undefined,
-    topic: `freekey-owner:${opener.id}`,
+    topic: `freekey-owner:${game.key}:${opener.id}`,
     permissionOverwrites: overwrites,
-    reason: `Free key requested by ${opener.tag}`,
+    reason: `${game.name} free key requested by ${opener.tag}`,
   });
 
-  await issueKey(guild, channel, opener.id);
-  await interaction.editReply({ content: `✅ Your free key is ready in <#${channel.id}>!` });
+  await issueKey(guild, channel, opener.id, game);
+  await interaction.editReply({ content: `✅ Your ${game.name} free key is ready in <#${channel.id}>!` });
 }
 
 // "Get New Key" button — only the owner, and only once their current key expired.
 async function newFreeKey(interaction) {
   const ownerId = freeKeyOwnerId(interaction.channel);
-  if (!ownerId) {
+  const game = gameByKey(freeKeyGameKey(interaction.channel));
+  if (!ownerId || !game) {
     return interaction.reply({ content: 'This button only works inside a free-key ticket.', ...EPHEMERAL });
   }
   if (interaction.user.id !== ownerId) {
     return interaction.reply({ content: '⛔ Only the ticket owner can request a new key here.', ...EPHEMERAL });
   }
-  const latest = latestKeyForUser(ownerId);
+  const latest = latestKeyForUser(ownerId, game.key);
   if (latest && latest.status !== 'expired' && latest.expiresAt > Date.now()) {
     return interaction.reply({
       content: `⏳ Your current key is still active — it expires <t:${Math.floor(latest.expiresAt / 1000)}:R>. Come back then for a new one.`,
@@ -315,7 +343,7 @@ async function newFreeKey(interaction) {
     });
   }
   await interaction.deferReply(EPHEMERAL);
-  await issueKey(interaction.guild, interaction.channel, ownerId);
+  await issueKey(interaction.guild, interaction.channel, ownerId, game);
   await interaction.editReply({ content: '✅ A fresh key has been posted above.' });
 }
 
@@ -333,7 +361,7 @@ async function expireKey(rec) {
       if (msg) {
         await msg.edit(buildSafeEntry({
           key: rec.key, userId: rec.userId, ticketChannelId: rec.ticketChannelId,
-          issuedAtMs: rec.issuedAt, expiresAtMs: rec.expiresAt, status: 'expired',
+          issuedAtMs: rec.issuedAt, expiresAtMs: rec.expiresAt, status: 'expired', gameName: rec.gameName,
         })).catch(() => {});
       }
     }

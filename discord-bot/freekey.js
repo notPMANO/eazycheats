@@ -36,11 +36,11 @@ function updateKey(key, patch) {
 }
 function getKeys() { load(); return store.keys; }
 function findKey(key) { load(); return store.keys.find((x) => x.key === key) || null; }
-// Most recently issued key for a user (or null). Used by the "Get New Key" button.
-function latestKeyForUser(userId) {
+// Most recently issued key for a user, optionally for one game. Used by "Get New Key".
+function latestKeyForUser(userId, game) {
   load();
   return store.keys
-    .filter((x) => x.userId === userId)
+    .filter((x) => x.userId === userId && (game ? x.game === game : true))
     .sort((a, b) => b.issuedAt - a.issuedAt)[0] || null;
 }
 
@@ -50,9 +50,13 @@ const randomDigits = (n) => {
   return s;
 };
 
-// --- key generation: EazyCheats-FreeKey-<N random digits> ---
+// --- key generation: <prefix><N random digits> ---
 function generateKey() {
   return FREE_KEY_PREFIX + randomDigits(FREE_KEY_DIGITS);
+}
+// Per-game free key, e.g. Prior-Free-Key-############ / PD-Free-Key-############
+function generateFreeKey(prefix) {
+  return prefix + randomDigits(FREE_KEY_DIGITS);
 }
 
 // --- premium key: EazyCheats-Premium-<length random digits> (mod-set length) ---
@@ -91,13 +95,14 @@ function buildKeyTicketMessage(key, userId, expiresAtMs) {
 }
 
 // The record entry in #free-key-safe (mod-only). status: 'active' | 'expired'.
-function buildSafeEntry({ key, userId, ticketChannelId, issuedAtMs, expiresAtMs, status }) {
+function buildSafeEntry({ key, userId, ticketChannelId, issuedAtMs, expiresAtMs, status, gameName }) {
   const active = status !== 'expired';
   const embed = new EmbedBuilder()
     .setColor(active ? 0x2ecc71 : 0xe74c3c)
     .setTitle(active ? '🔑 Free Key Issued' : '🔑 Free Key (Expired)')
     .addFields(
       { name: 'Key', value: '```\n' + key + '\n```' },
+      { name: 'Game', value: gameName || '—', inline: true },
       { name: 'User', value: `<@${userId}>`, inline: true },
       { name: 'Ticket', value: ticketChannelId ? `<#${ticketChannelId}>` : 'unknown', inline: true },
       { name: 'Status', value: active ? '🟢 Active' : '🔴 Expired', inline: true },
@@ -157,7 +162,7 @@ function buildHwidAlert({ key, hwid, allHwids, ticketChannelId, userId }) {
 }
 
 module.exports = {
-  generateKey, generatePremiumKey, addKey, updateKey, getKeys, findKey, latestKeyForUser,
+  generateKey, generateFreeKey, generatePremiumKey, addKey, updateKey, getKeys, findKey, latestKeyForUser,
   buildKeyTicketMessage, buildSafeEntry,
   buildPremiumKeyMessage, buildPremiumSafeEntry, buildHwidAlert,
 };
