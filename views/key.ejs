@@ -63,9 +63,7 @@
       </p>
 
       <div class="key-cta">
-        <form action="/key/start" method="POST" class="inline">
-          <button type="submit" class="btn btn-ghost">Get a new key</button>
-        </form>
+        <a href="/key/start" class="btn btn-ghost">Get a new key</a>
       </div>
 
     <% } else { %>
@@ -76,9 +74,7 @@
       </ol>
 
       <div class="key-cta">
-        <form action="/key/start" method="POST">
-          <button type="submit" class="btn btn-primary btn-lg">Get Free Key</button>
-        </form>
+        <a href="/key/start" class="btn btn-primary btn-lg">Get Free Key</a>
         <p class="muted" style="margin-top:.75rem;">Free key · valid <%= hours %> hours</p>
       </div>
     <% } %>

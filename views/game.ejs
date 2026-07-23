@@ -54,10 +54,7 @@
       <% } else if (typeof keyConfigured !== 'undefined' && !keyConfigured) { %>
         <a href="https://discord.gg/uVXQTGefvq" target="_blank" rel="noopener" class="btn btn-ghost btn-lg">Join Discord</a>
       <% } else { %>
-        <form action="/key/start" method="POST">
-          <input type="hidden" name="game" value="<%= game.slug %>">
-          <button type="submit" class="btn btn-primary btn-lg">Get Free Key</button>
-        </form>
+        <a href="/key/start?game=<%= game.slug %>" class="btn btn-primary btn-lg">Get Free Key</a>
       <% } %>
     </div>
   </div>

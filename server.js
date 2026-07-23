@@ -518,7 +518,12 @@ app.get('/key', (req, res) => {
   });
 });
 
-app.post('/key/start', keyGenLimiter, async (req, res) => {
+// The "Get Free Key" button links here (GET) rather than POSTing a form, because
+// the browser's CSP `form-action 'self'` would silently block a form that
+// redirects to an external domain (LootLabs). A plain link navigation isn't
+// subject to form-action, so the whole locker redirect chain is allowed. POST is
+// still accepted for anything that wants to submit a form.
+async function startKeyFlow(req, res) {
   if (!lootlabs.isConfigured()) {
     flash(req, 'error', 'The key system is being set up — please check back soon.');
     return res.redirect('/key');
@@ -526,7 +531,8 @@ app.post('/key/start', keyGenLimiter, async (req, res) => {
   // One-time nonce the callback must present to mint a key.
   const token = crypto.randomBytes(24).toString('hex');
   const expiresAt = new Date(Date.now() + NONCE_TTL_MIN * 60 * 1000).toISOString();
-  const gameId = resolveGameId(req.body.game); // null unless a known game is named
+  const game = (req.query && req.query.game) || (req.body && req.body.game);
+  const gameId = resolveGameId(game); // null unless a known game is named
   db.prepare('INSERT INTO key_nonces (token, game_id, ip, expires_at) VALUES (?, ?, ?, ?)')
     .run(token, gameId, req.ip || null, expiresAt);
 
@@ -538,7 +544,9 @@ app.post('/key/start', keyGenLimiter, async (req, res) => {
     return res.redirect('/key');
   }
   return res.redirect(lockerUrl);
-});
+}
+app.get('/key/start', keyGenLimiter, startKeyFlow);
+app.post('/key/start', keyGenLimiter, startKeyFlow);
 
 app.get('/key/callback', (req, res) => {
   const token = String(req.query.token || '');
