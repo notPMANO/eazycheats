@@ -14,7 +14,7 @@ local player = Players.LocalPlayer
 -- Themed to the EazyCheats logo: deep indigo-purple surfaces, violet accent.
 local COLORS = {
     background = Color3.fromRGB(24, 10, 50),
-    topbar = Color3.fromRGB(34, 15, 68),
+    topbar = Color3.fromRGB(62, 28, 118),
     sidebar = Color3.fromRGB(19, 7, 43),
     tabActive = Color3.fromRGB(112, 52, 198),
     tabHover = Color3.fromRGB(47, 23, 84),
@@ -37,7 +37,9 @@ local COLORS = {
     notifyBg = Color3.fromRGB(34, 15, 68),
 }
 
-local WINDOW_SIZE = UDim2.new(0, 580, 0, 400)
+-- 440 tall rather than 400: the Information tab shows the banner plus two
+-- titled groups without scrolling, and that needs the extra 40px.
+local WINDOW_SIZE = UDim2.new(0, 580, 0, 440)
 local WINDOW_MIN_SIZE = UDim2.new(0, 580, 0, 40)
 
 -- ═══════════════════════════════════════
@@ -104,6 +106,10 @@ function Library.new(config)
     self.bannerImage = config.BannerImage
     -- The Information tab is created automatically unless Information=false is passed.
     self.showInfoTab = config.Information ~= false
+    -- Settings tab (menu keybind + unload), unless Settings=false is passed.
+    self.showSettingsTab = config.Settings ~= false
+    -- True while a keybind picker is waiting for a key press.
+    self.capturingKey = false
     -- Optional cleanup run by the Information tab's Unload button before Destroy().
     self.onUnload = config.OnUnload
 
@@ -122,7 +128,7 @@ function Library.new(config)
     self.main = Instance.new("Frame")
     self.main.Name = "Main"
     self.main.Size = WINDOW_SIZE
-    self.main.Position = UDim2.new(0.5, -290, 0.5, -200)
+    self.main.Position = UDim2.new(0.5, -290, 0.5, -220)
     self.main.BackgroundColor3 = COLORS.background
     self.main.BorderSizePixel = 0
     self.main.ClipsDescendants = true
@@ -158,6 +164,22 @@ function Library.new(config)
     self.contentArea.BorderSizePixel = 0
     self.contentArea.Parent = self.main
 
+    -- Same treatment as the sidebar, mirrored: keep the bottom-right rounded to
+    -- match the window, square off the top two and the bottom-left.
+    makeCorner(self.contentArea, 10)
+    local contentTopFill = Instance.new("Frame")
+    contentTopFill.Name = "CornerFillTop"
+    contentTopFill.Size = UDim2.new(1, 0, 0, 14)
+    contentTopFill.BackgroundColor3 = COLORS.contentBg
+    contentTopFill.BorderSizePixel = 0
+    contentTopFill.Parent = self.contentArea
+    local contentLeftFill = Instance.new("Frame")
+    contentLeftFill.Name = "CornerFillLeft"
+    contentLeftFill.Size = UDim2.new(0, 14, 1, 0)
+    contentLeftFill.BackgroundColor3 = COLORS.contentBg
+    contentLeftFill.BorderSizePixel = 0
+    contentLeftFill.Parent = self.contentArea
+
     -- Notification container (bottom-right, outside the main window)
     self.notifyContainer = Instance.new("Frame")
     self.notifyContainer.Name = "Notifications"
@@ -177,6 +199,9 @@ function Library.new(config)
     self:_track(UserInputService.InputBegan:Connect(function(input, processed)
         if self.destroyed then return end
         if processed then return end
+        -- A keybind picker is waiting for a key; don't also act on it.
+        if self.capturingKey then return end
+        if self.toggleKey == Enum.KeyCode.Unknown then return end
         if input.KeyCode == self.toggleKey then
             self.gui.Enabled = not self.gui.Enabled
         end
@@ -270,6 +295,9 @@ function Library.new(config)
     if self.showInfoTab then
         self:_createInfoTab()
     end
+    if self.showSettingsTab then
+        self:_createSettingsTab()
+    end
 
     return self
 end
@@ -296,25 +324,8 @@ function Library:_createTopbar()
     topFill.BorderSizePixel = 0
     topFill.Parent = topbar
 
-    -- Purple sheen across the topbar, and a glowing hairline along its bottom
-    -- edge to separate it from the content area.
-    local topGrad = Instance.new("UIGradient")
-    topGrad.Color = ColorSequence.new({
-        ColorSequenceKeypoint.new(0, Color3.fromRGB(44, 18, 80)),
-        ColorSequenceKeypoint.new(0.5, Color3.fromRGB(62, 27, 110)),
-        ColorSequenceKeypoint.new(1, Color3.fromRGB(38, 15, 70)),
-    })
-    topGrad.Parent = topbar
-
-    local topAccent = Instance.new("Frame")
-    topAccent.Name = "TopAccent"
-    topAccent.Size = UDim2.new(1, 0, 0, 1)
-    topAccent.Position = UDim2.new(0, 0, 1, -1)
-    topAccent.BackgroundColor3 = COLORS.accent
-    topAccent.BackgroundTransparency = 0.45
-    topAccent.BorderSizePixel = 0
-    topAccent.ZIndex = 2
-    topAccent.Parent = topbar
+    -- Flat single purple: no gradient, and no lighter accent line along the
+    -- bottom edge. Any second tone up here competed with the title text.
 
     -- Title
     local title = Instance.new("TextLabel")
@@ -328,39 +339,9 @@ function Library:_createTopbar()
     title.TextXAlignment = Enum.TextXAlignment.Left
     title.Parent = topbar
 
-    -- Close
-    local closeBtn = Instance.new("TextButton")
-    closeBtn.Size = UDim2.new(0, 40, 0, 40)
-    closeBtn.Position = UDim2.new(1, -40, 0, 0)
-    closeBtn.BackgroundTransparency = 1
-    closeBtn.Text = "×"
-    closeBtn.TextColor3 = COLORS.textDim
-    closeBtn.TextSize = 22
-    closeBtn.Font = Enum.Font.GothamBold
-    closeBtn.Parent = topbar
-    closeBtn.MouseEnter:Connect(function() closeBtn.TextColor3 = Color3.fromRGB(255, 80, 80) end)
-    closeBtn.MouseLeave:Connect(function() closeBtn.TextColor3 = COLORS.textDim end)
-    closeBtn.MouseButton1Click:Connect(function() self.gui.Enabled = false end)
-
-    -- Minimize
-    local minBtn = Instance.new("TextButton")
-    minBtn.Size = UDim2.new(0, 40, 0, 40)
-    minBtn.Position = UDim2.new(1, -76, 0, 0)
-    minBtn.BackgroundTransparency = 1
-    minBtn.Text = "–"
-    minBtn.TextColor3 = COLORS.textDim
-    minBtn.TextSize = 22
-    minBtn.Font = Enum.Font.GothamBold
-    minBtn.Parent = topbar
-    minBtn.MouseEnter:Connect(function() minBtn.TextColor3 = COLORS.text end)
-    minBtn.MouseLeave:Connect(function() minBtn.TextColor3 = COLORS.textDim end)
-
-    local minimized = false
-    minBtn.MouseButton1Click:Connect(function()
-        minimized = not minimized
-        -- Restore to whatever the window's full size currently is, not a hardcoded value.
-        tween(self.main, 0.25, {Size = minimized and WINDOW_MIN_SIZE or self.fullSize or WINDOW_SIZE})
-    end)
+    -- No close/minimize buttons: the toggle keybind hides the window (rebindable
+    -- on the Settings tab) and Settings > Unload tears it down for good, so a
+    -- × and – in the corner were two more ways to do what those already do.
     self.fullSize = WINDOW_SIZE
 
     -- Dragging (with on-screen bounds so the window can't be lost)
@@ -406,6 +387,25 @@ function Library:_createSidebar()
     sidebar.BackgroundColor3 = COLORS.sidebar
     sidebar.BorderSizePixel = 0
     sidebar.Parent = self.main
+
+    -- Round the sidebar's bottom-left so it follows the window's corner instead
+    -- of poking a square edge through it. UICorner rounds all four, so the two
+    -- top corners and the bottom-right (which meets the content area mid-window)
+    -- are squared back off with same-coloured fillers.
+    makeCorner(sidebar, 10)
+    local sideTopFill = Instance.new("Frame")
+    sideTopFill.Name = "CornerFillTop"
+    sideTopFill.Size = UDim2.new(1, 0, 0, 14)
+    sideTopFill.BackgroundColor3 = COLORS.sidebar
+    sideTopFill.BorderSizePixel = 0
+    sideTopFill.Parent = sidebar
+    local sideRightFill = Instance.new("Frame")
+    sideRightFill.Name = "CornerFillRight"
+    sideRightFill.Size = UDim2.new(0, 14, 1, 0)
+    sideRightFill.Position = UDim2.new(1, -14, 0, 0)
+    sideRightFill.BackgroundColor3 = COLORS.sidebar
+    sideRightFill.BorderSizePixel = 0
+    sideRightFill.Parent = sidebar
 
     local line = Instance.new("Frame")
     line.Size = UDim2.new(0, 1, 1, 0)
@@ -661,8 +661,10 @@ local function makeBanner(parent, order, imageAsset)
     banner.LayoutOrder = order
     banner.ClipsDescendants = true
     banner.Parent = parent
-    makeCorner(banner, 8)
-    makeStroke(banner, Color3.fromRGB(96, 52, 160), 1)
+    -- No stroke and no bottom rule: both were straight lines meeting a rounded
+    -- corner, which is what made the edges look chewed up. The gradient against
+    -- the page background is enough separation on its own.
+    makeCorner(banner, 10)
 
     -- Diagonal purple wash, echoing the wave artwork in the logo.
     local grad = Instance.new("UIGradient")
@@ -725,9 +727,10 @@ local function makeBanner(parent, order, imageAsset)
         mark.Name = "Mark"
         mark.Size = UDim2.new(1, 0, 1, 0)
         mark.BackgroundTransparency = 1
-        mark.Text = "Eazy"
+        mark.Text = "EZ"
         mark.TextColor3 = Color3.fromRGB(255, 255, 255)
-        mark.TextSize = 24
+        -- Two characters instead of four, so size up to keep the badge balanced.
+        mark.TextSize = 30
         mark.Font = Enum.Font.GothamBlack
         mark.Parent = badge
     end
@@ -758,22 +761,6 @@ local function makeBanner(parent, order, imageAsset)
     tagline.TextXAlignment = Enum.TextXAlignment.Left
     tagline.Parent = banner
 
-    -- Glowing rule along the bottom edge.
-    local rule = Instance.new("Frame")
-    rule.Name = "Rule"
-    rule.Size = UDim2.new(1, 0, 0, 2)
-    rule.Position = UDim2.new(0, 0, 1, -2)
-    rule.BackgroundColor3 = COLORS.accent
-    rule.BorderSizePixel = 0
-    rule.Parent = banner
-    local ruleGrad = Instance.new("UIGradient")
-    ruleGrad.Color = ColorSequence.new({
-        ColorSequenceKeypoint.new(0, Color3.fromRGB(88, 40, 165)),
-        ColorSequenceKeypoint.new(0.5, Color3.fromRGB(190, 130, 255)),
-        ColorSequenceKeypoint.new(1, Color3.fromRGB(88, 40, 165)),
-    })
-    ruleGrad.Parent = rule
-
     return banner
 end
 
@@ -791,31 +778,69 @@ end
 function Library:_createInfoTab()
     local tab = self:AddTab({ Name = "Information", Icon = "i" })
 
+    -- Everything on this tab is fixed-height and sized to fit the window, so it
+    -- never scrolls — a scrollbar over four read-only rows looked unfinished.
+    tab.page.ScrollingEnabled = false
+    tab.page.ScrollBarThickness = 0
+
     -- Brand banner sits above everything else on this tab.
     tab.layoutOrder = tab.layoutOrder + 1
     makeBanner(tab.page, tab.layoutOrder, self.bannerImage)
-
-    tab:AddSection("User Info")
 
     local account = player.Name
     if player.DisplayName and player.DisplayName ~= player.Name then
         account = player.DisplayName .. " (@" .. player.Name .. ")"
     end
 
+    tab:AddSection("User Info")
     tab:_addInfoRow("Account", account, true)
     tab:_addInfoRow("HWID", readHWID(), true)
 
     tab:AddSection("Links")
-
     tab:_addInfoRow("Discord", self.discordLink, true)
     tab:_addInfoRow("Website", self.websiteLink, true)
 
-    -- Unload button at the bottom: runs the optional cleanup hook, then tears the
-    -- whole menu down (disconnects every tracked connection and destroys the GUI).
-    tab:AddSection("")
+    return tab
+end
+
+-- Settings tab: rebind the menu toggle, and unload the whole menu. These used to
+-- live on the topbar as – and ×; giving them a tab means the keybind is
+-- discoverable instead of being something you just had to know.
+function Library:_createSettingsTab()
+    local tab = self:AddTab({ Name = "Settings", Icon = "*" })
+    tab.page.ScrollingEnabled = false
+    tab.page.ScrollBarThickness = 0
+    -- Built at construction time, so without this it would sit second in the
+    -- sidebar, above the hub's own tabs. Push it to the bottom where it belongs.
+    tab.button.LayoutOrder = 999
+
     local lib = self
+
+    tab:AddSection("Menu")
+    -- AllowModifiers, because the default bind is RightShift and the normal
+    -- keybind picker refuses modifier keys — without it you could rebind away
+    -- from RightShift but never back to it.
+    tab:AddKeybind({
+        Name = "Open / close menu",
+        Default = self.toggleKey,
+        AllowModifiers = true,
+        Changed = function(key)
+            lib:SetToggleKey(key)
+            if key == Enum.KeyCode.Unknown then
+                lib:Notify("Menu keybind cleared — no key will open the menu.", 6)
+            else
+                lib:Notify("Menu keybind set to " .. key.Name, 4)
+            end
+        end,
+        Tooltip = "Click, then press a key. Escape clears it.",
+    })
+
+    tab:_addSpacer(10)
+
+    tab:AddSection("Session")
     tab:AddButton({
         Name = "Unload EazyCheats",
+        Tooltip = "Closes the menu and disconnects everything it hooked.",
         Callback = function()
             if lib.onUnload then pcall(lib.onUnload) end
             lib:Destroy()
@@ -888,6 +913,19 @@ function TabClass:AddSection(name)
     pad.Parent = section
 
     return section
+end
+
+-- Invisible fixed-height gap, for separating groups of rows without a header.
+function TabClass:_addSpacer(height)
+    self.layoutOrder = self.layoutOrder + 1
+    local spacer = Instance.new("Frame")
+    spacer.Name = "Spacer"
+    spacer.Size = UDim2.new(1, 0, 0, height or 8)
+    spacer.BackgroundTransparency = 1
+    spacer.BorderSizePixel = 0
+    spacer.LayoutOrder = self.layoutOrder
+    spacer.Parent = self.page
+    return spacer
 end
 
 -- Read-only "label: value" row. If copyable, clicking copies the value to the
@@ -1474,6 +1512,9 @@ function TabClass:AddKeybind(config)
     local default = config.Default or Enum.KeyCode.Unknown
     local callback = config.Callback or function() end
     local changed = config.Changed or function() end
+    -- Modifier keys are refused by default (they clash with normal controls),
+    -- but the menu toggle itself defaults to RightShift, so that picker opts in.
+    local allowModifiers = config.AllowModifiers or false
 
     self.layoutOrder = self.layoutOrder + 1
     local key = default
@@ -1515,6 +1556,9 @@ function TabClass:AddKeybind(config)
 
     bindBtn.MouseButton1Click:Connect(function()
         listening = true
+        -- Suppress the menu toggle while capturing, or binding the toggle key
+        -- would also hide the window out from under you.
+        self.library.capturingKey = true
         bindBtn.Text = "..."
         bindBtn.TextColor3 = COLORS.accent
     end)
@@ -1529,18 +1573,22 @@ function TabClass:AddKeybind(config)
                 key = Enum.KeyCode.Unknown
                 keybindObj.Key = key
                 listening = false
+                self.library.capturingKey = false
                 bindBtn.Text = "None"
                 bindBtn.TextColor3 = COLORS.textDim
                 changed(key)
                 return
             end
-            -- Reject modifier keys that would conflict with normal controls.
-            if BLOCKED_KEYS[input.KeyCode] then return end
+            -- Reject modifier keys that would conflict with normal controls,
+            -- unless this picker explicitly allows them.
+            if BLOCKED_KEYS[input.KeyCode] and not allowModifiers then return end
+            if input.KeyCode == Enum.KeyCode.Unknown then return end
             key = input.KeyCode
             keybindObj.Key = key
             bindBtn.Text = key.Name
             bindBtn.TextColor3 = COLORS.textDim
             listening = false
+            self.library.capturingKey = false
             changed(key)
             return
         end
