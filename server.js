@@ -445,7 +445,13 @@ app.get('/game/:slug', (req, res) => {
   const game = db.prepare('SELECT * FROM games WHERE slug = ?').get(req.params.slug);
   if (!game) return res.status(404).render('404');
   const products = db.prepare('SELECT * FROM products WHERE game_id = ? ORDER BY id DESC').all(game.id);
-  res.render('game', { game, products });
+  res.render('game', {
+    game,
+    products,
+    activeKey: activeSessionKey(req),
+    keyConfigured: lootlabs.isConfigured(),
+    keyHours: FREE_KEY_HOURS,
+  });
 });
 
 app.get('/game/:gameSlug/:productSlug', (req, res) => {

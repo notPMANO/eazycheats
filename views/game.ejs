@@ -1,6 +1,22 @@
 <% pageTitle = game.title %>
 <%- include('partials/header') %>
 
+<style>
+  .key-cta-banner {
+    display: flex; flex-wrap: wrap; gap: 1rem; align-items: center;
+    justify-content: space-between; margin: 0 0 1.75rem;
+    padding: 1.4rem 1.6rem; border-radius: 14px;
+    background: linear-gradient(135deg, rgba(108,92,231,.18), rgba(108,92,231,.05));
+    border: 1px solid rgba(108,92,231,.35);
+  }
+  .key-cta-banner h2 { margin: 0 0 .25rem; font-size: 1.25rem; }
+  .key-cta-banner p { margin: 0; }
+  .key-cta-banner .cta-mono {
+    font-family: ui-monospace, Menlo, Consolas, monospace;
+    letter-spacing: .5px;
+  }
+</style>
+
 <section class="page-head">
   <div class="page-head-inner">
     <div class="page-head-icon">
@@ -21,6 +37,31 @@
 </section>
 
 <section class="container">
+  <div class="key-cta-banner">
+    <div>
+      <h2>🔑 Unlock <%= game.title %></h2>
+      <% if (typeof activeKey !== 'undefined' && activeKey) { %>
+        <p class="muted">You've got an active key: <span class="cta-mono"><%= activeKey.key %></span></p>
+      <% } else if (typeof keyConfigured !== 'undefined' && !keyConfigured) { %>
+        <p class="muted">Free keys are being set up — check back shortly or grab one from Discord.</p>
+      <% } else { %>
+        <p class="muted">Get a free <%= typeof keyHours !== 'undefined' ? keyHours : 4 %>-hour key — two quick steps and you're in.</p>
+      <% } %>
+    </div>
+    <div>
+      <% if (typeof activeKey !== 'undefined' && activeKey) { %>
+        <a href="/key" class="btn btn-primary btn-lg">View my key</a>
+      <% } else if (typeof keyConfigured !== 'undefined' && !keyConfigured) { %>
+        <a href="https://discord.gg/uVXQTGefvq" target="_blank" rel="noopener" class="btn btn-ghost btn-lg">Join Discord</a>
+      <% } else { %>
+        <form action="/key/start" method="POST">
+          <input type="hidden" name="game" value="<%= game.slug %>">
+          <button type="submit" class="btn btn-primary btn-lg">Get Free Key</button>
+        </form>
+      <% } %>
+    </div>
+  </div>
+
   <% if (products.length === 0) { %>
     <div class="empty">
       <p>No products for <%= game.title %> yet.</p>
