@@ -198,8 +198,11 @@ function Library.new(config)
     modalBtn.Text = ""
     modalBtn.AutoButtonColor = false
     modalBtn.BackgroundTransparency = 1
+    -- Must be ON-screen (not off-screen) for Modal to actually engage. 1px + fully
+    -- transparent, so it's invisible but the engine still counts it as a visible modal.
     modalBtn.Size = UDim2.new(0, 1, 0, 1)
-    modalBtn.Position = UDim2.new(0, -10, 0, -10)   -- off-screen; only its Modal flag matters
+    modalBtn.Position = UDim2.new(0, 0, 0, 0)
+    modalBtn.ZIndex = 1
     modalBtn.Parent = self.gui
 
     local function bindMouse()
