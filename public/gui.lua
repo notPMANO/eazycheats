@@ -12,28 +12,28 @@ local player = Players.LocalPlayer
 -- COLORS (edit these to retheme)
 -- ═══════════════════════════════════════
 local COLORS = {
-    background = Color3.fromRGB(25, 25, 35),
-    topbar = Color3.fromRGB(35, 35, 50),
-    sidebar = Color3.fromRGB(20, 20, 30),
-    tabActive = Color3.fromRGB(90, 60, 220),
-    tabHover = Color3.fromRGB(45, 45, 65),
-    tabInactive = Color3.fromRGB(20, 20, 30),
-    accent = Color3.fromRGB(90, 60, 220),
-    text = Color3.fromRGB(230, 230, 240),
-    textDim = Color3.fromRGB(140, 140, 160),
-    toggleOn = Color3.fromRGB(90, 60, 220),
-    toggleOff = Color3.fromRGB(60, 60, 75),
+    background = Color3.fromRGB(22, 8, 48),
+    topbar = Color3.fromRGB(32, 14, 65),
+    sidebar = Color3.fromRGB(18, 6, 42),
+    tabActive = Color3.fromRGB(110, 50, 195),
+    tabHover = Color3.fromRGB(45, 22, 80),
+    tabInactive = Color3.fromRGB(18, 6, 42),
+    accent = Color3.fromRGB(130, 65, 215),
+    text = Color3.fromRGB(235, 230, 245),
+    textDim = Color3.fromRGB(160, 140, 185),
+    toggleOn = Color3.fromRGB(130, 65, 215),
+    toggleOff = Color3.fromRGB(55, 30, 85),
     toggleKnob = Color3.fromRGB(255, 255, 255),
-    sliderBg = Color3.fromRGB(40, 40, 55),
-    sliderFill = Color3.fromRGB(90, 60, 220),
-    contentBg = Color3.fromRGB(30, 30, 42),
-    border = Color3.fromRGB(50, 50, 70),
-    dropdownBg = Color3.fromRGB(35, 35, 48),
-    dropdownItem = Color3.fromRGB(40, 40, 55),
-    dropdownItemHover = Color3.fromRGB(55, 55, 75),
-    dropdownItemActive = Color3.fromRGB(90, 60, 220),
-    sectionBg = Color3.fromRGB(28, 28, 40),
-    notifyBg = Color3.fromRGB(35, 35, 50),
+    sliderBg = Color3.fromRGB(38, 18, 68),
+    sliderFill = Color3.fromRGB(130, 65, 215),
+    contentBg = Color3.fromRGB(26, 10, 52),
+    border = Color3.fromRGB(65, 35, 110),
+    dropdownBg = Color3.fromRGB(32, 14, 60),
+    dropdownItem = Color3.fromRGB(38, 18, 68),
+    dropdownItemHover = Color3.fromRGB(55, 30, 95),
+    dropdownItemActive = Color3.fromRGB(110, 50, 195),
+    sectionBg = Color3.fromRGB(28, 12, 55),
+    notifyBg = Color3.fromRGB(32, 14, 65),
 }
 
 local WINDOW_SIZE = UDim2.new(0, 580, 0, 400)
@@ -98,6 +98,15 @@ function Library.new(config)
     -- Links shown on the built-in Information tab (override via config when known).
     self.discordLink = config.Discord or "https://discord.gg/uVXQTGefvq"
     self.websiteLink = config.Website or "eazycheats.com"
+    -- Information tab banner. BannerImage takes an rbxassetid:// directly and
+    -- wins when set; otherwise LogoUrl is downloaded at runtime (see
+    -- loadRemoteImage). Pass LogoUrl=false to skip the fetch and keep the
+    -- text wordmark.
+    self.bannerImage = config.BannerImage
+    self.logoUrl = config.LogoUrl
+    if self.logoUrl == nil then
+        self.logoUrl = "https://eazycheats.com/img/eazycheats-logo.jpg"
+    end
     -- The Information tab is created automatically unless Information=false is passed.
     self.showInfoTab = config.Information ~= false
     -- Optional cleanup run by the Information tab's Unload button before Destroy().
@@ -291,6 +300,24 @@ function Library:_createTopbar()
     topFill.BackgroundColor3 = COLORS.topbar
     topFill.BorderSizePixel = 0
     topFill.Parent = topbar
+
+    -- Subtle purple gradient across the topbar
+    local topGrad = Instance.new("UIGradient")
+    topGrad.Color = ColorSequence.new({
+        ColorSequenceKeypoint.new(0, Color3.fromRGB(40, 16, 72)),
+        ColorSequenceKeypoint.new(0.5, Color3.fromRGB(55, 22, 95)),
+        ColorSequenceKeypoint.new(1, Color3.fromRGB(35, 14, 65)),
+    })
+    topGrad.Parent = topbar
+
+    -- Accent line at the bottom of the topbar
+    local topAccent = Instance.new("Frame")
+    topAccent.Size = UDim2.new(1, 0, 0, 1)
+    topAccent.Position = UDim2.new(0, 0, 1, -1)
+    topAccent.BackgroundColor3 = COLORS.accent
+    topAccent.BackgroundTransparency = 0.5
+    topAccent.BorderSizePixel = 0
+    topAccent.Parent = topbar
 
     -- Title
     local title = Instance.new("TextLabel")
@@ -622,6 +649,51 @@ function Library:_switchTab(name)
     end
 end
 
+-- Turns an ordinary https:// image URL into something an ImageLabel can render.
+--
+-- Roblox refuses external URLs in ImageLabel.Image — only rbxassetid:// and
+-- friends are accepted — so the bytes have to be downloaded, written into the
+-- executor's workspace folder, and handed back through getcustomasset. Every
+-- step is executor-specific and optional, so this returns nil (rather than
+-- erroring) whenever the executor can't do it, letting callers fall back.
+-- A fresh download is attempted every time so replacing the logo on the site
+-- takes effect on the next launch; the on-disk copy is only a fallback for when
+-- the site is unreachable.
+local function loadRemoteImage(url)
+    local getAsset = getcustomasset or getsynasset
+    if not getAsset and syn and syn.getcustomasset then getAsset = syn.getcustomasset end
+    if not getAsset or not writefile then return nil end
+
+    -- Keep the real extension: some executors infer the format from it.
+    local ext = url:match("%.(%a%a%a%a?)$") or "png"
+    local cacheName = "eazycheats_logo." .. ext:lower()
+
+    local req = http_request or request
+    if not req and syn and syn.request then req = syn.request end
+
+    if req then
+        local ok, res = pcall(req, { Url = url, Method = "GET" })
+        -- Some executors omit StatusCode entirely; only reject an explicit non-200.
+        if ok and type(res) == "table" and (not res.StatusCode or res.StatusCode == 200) then
+            local body = res.Body
+            if type(body) == "string" and #body > 0 and pcall(writefile, cacheName, body) then
+                local okAsset, asset = pcall(getAsset, cacheName)
+                if okAsset and asset then return asset end
+            end
+        end
+    end
+
+    -- Offline, site down, or no request function — reuse the last good copy.
+    if isfile then
+        local ok, cached = pcall(function()
+            if isfile(cacheName) then return getAsset(cacheName) end
+            return nil
+        end)
+        if ok and cached then return cached end
+    end
+    return nil
+end
+
 -- Reads this executor's hardware id (best-effort across executors).
 local function readHWID()
     local h
@@ -636,7 +708,101 @@ end
 function Library:_createInfoTab()
     local tab = self:AddTab({ Name = "Information", Icon = "i" })
 
-    tab:AddSection("EazyCheats")
+    -- Logo banner at the top of the Information tab.
+    tab.layoutOrder = tab.layoutOrder + 1
+    local bannerFrame = Instance.new("Frame")
+    bannerFrame.Name = "Banner"
+    bannerFrame.Size = UDim2.new(1, 0, 0, 120)
+    bannerFrame.BackgroundColor3 = Color3.fromRGB(30, 12, 58)
+    bannerFrame.BorderSizePixel = 0
+    bannerFrame.LayoutOrder = tab.layoutOrder
+    bannerFrame.ClipsDescendants = true
+    bannerFrame.Parent = tab.page
+    makeCorner(bannerFrame, 8)
+
+    -- Gradient background, echoing the logo's purple wave artwork.
+    local bannerGrad = Instance.new("UIGradient")
+    bannerGrad.Color = ColorSequence.new({
+        ColorSequenceKeypoint.new(0, Color3.fromRGB(45, 15, 85)),
+        ColorSequenceKeypoint.new(0.5, Color3.fromRGB(65, 25, 120)),
+        ColorSequenceKeypoint.new(1, Color3.fromRGB(35, 10, 65)),
+    })
+    bannerGrad.Rotation = 25
+    bannerGrad.Parent = bannerFrame
+
+    -- Text wordmark. This is what shows until (or instead of) the real logo:
+    -- executors without request/writefile/getcustomasset never get the image,
+    -- and even where they do the download takes a moment, so the banner is
+    -- never blank.
+    local wordmark = Instance.new("TextLabel")
+    wordmark.Name = "Wordmark"
+    wordmark.Size = UDim2.new(1, -24, 1, -24)
+    wordmark.Position = UDim2.new(0, 12, 0, 12)
+    wordmark.BackgroundTransparency = 1
+    wordmark.RichText = true
+    wordmark.Text = '<font color="#FFFFFF">Eazy</font><font color="#A855F7">Cheats</font>'
+    wordmark.TextColor3 = COLORS.text
+    wordmark.TextSize = 34
+    wordmark.Font = Enum.Font.GothamBlack
+    wordmark.Parent = bannerFrame
+
+    local tagline = Instance.new("TextLabel")
+    tagline.Size = UDim2.new(1, -24, 0, 16)
+    tagline.Position = UDim2.new(0, 12, 1, -34)
+    tagline.BackgroundTransparency = 1
+    tagline.Text = "We make you better at games"
+    tagline.TextColor3 = Color3.fromRGB(190, 165, 225)
+    tagline.TextSize = 11
+    tagline.Font = Enum.Font.GothamMedium
+    tagline.Parent = bannerFrame
+
+    -- The real logo, swapped in once it downloads.
+    local bannerImg = Instance.new("ImageLabel")
+    bannerImg.Name = "Logo"
+    bannerImg.Size = UDim2.new(0, 108, 0, 108)
+    bannerImg.Position = UDim2.new(0.5, -54, 0.5, -54)
+    bannerImg.BackgroundTransparency = 1
+    bannerImg.ScaleType = Enum.ScaleType.Fit
+    bannerImg.Visible = false
+    bannerImg.Parent = bannerFrame
+
+    -- A direct rbxassetid:// (config.BannerImage) needs no download, so use it
+    -- immediately. Otherwise fetch the hosted image off-thread so a slow or
+    -- unreachable site never blocks the menu from opening.
+    if self.bannerImage then
+        bannerImg.Image = self.bannerImage
+        bannerImg.Visible = true
+        wordmark.Visible = false
+        tagline.Visible = false
+    elseif self.logoUrl and self.logoUrl ~= "" then
+        local lib = self
+        task.spawn(function()
+            local asset = loadRemoteImage(lib.logoUrl)
+            -- Bail out if the menu was unloaded while the download was running.
+            if not asset or lib.destroyed or not bannerImg.Parent then return end
+            bannerImg.Image = asset
+            bannerImg.Visible = true
+            wordmark.Visible = false
+            tagline.Visible = false
+        end)
+    end
+
+    -- Accent line under the banner
+    local bannerLine = Instance.new("Frame")
+    bannerLine.Size = UDim2.new(1, 0, 0, 2)
+    bannerLine.Position = UDim2.new(0, 0, 1, -2)
+    bannerLine.BackgroundColor3 = COLORS.accent
+    bannerLine.BorderSizePixel = 0
+    bannerLine.Parent = bannerFrame
+    local lineGrad = Instance.new("UIGradient")
+    lineGrad.Color = ColorSequence.new({
+        ColorSequenceKeypoint.new(0, Color3.fromRGB(90, 40, 170)),
+        ColorSequenceKeypoint.new(0.5, Color3.fromRGB(160, 90, 240)),
+        ColorSequenceKeypoint.new(1, Color3.fromRGB(90, 40, 170)),
+    })
+    lineGrad.Parent = bannerLine
+
+    tab:AddSection("User Info")
 
     local account = player.Name
     if player.DisplayName and player.DisplayName ~= player.Name then
@@ -645,11 +811,12 @@ function Library:_createInfoTab()
 
     tab:_addInfoRow("Account", account, true)
     tab:_addInfoRow("HWID", readHWID(), true)
+
+    tab:AddSection("Links")
+
     tab:_addInfoRow("Discord", self.discordLink, true)
     tab:_addInfoRow("Website", self.websiteLink, true)
 
-    -- Unload button at the bottom: runs the optional cleanup hook, then tears the
-    -- whole menu down (disconnects every tracked connection and destroys the GUI).
     tab:AddSection("")
     local lib = self
     tab:AddButton({
