@@ -725,10 +725,9 @@ local function makeBanner(parent, order, imageAsset)
         mark.Name = "Mark"
         mark.Size = UDim2.new(1, 0, 1, 0)
         mark.BackgroundTransparency = 1
-        mark.Text = "EZ"
+        mark.Text = "Eazy"
         mark.TextColor3 = Color3.fromRGB(255, 255, 255)
-        -- Two characters instead of four, so size up to keep the badge balanced.
-        mark.TextSize = 30
+        mark.TextSize = 24
         mark.Font = Enum.Font.GothamBlack
         mark.Parent = badge
     end
