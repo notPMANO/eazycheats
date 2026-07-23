@@ -956,7 +956,16 @@ function seedScriptsFromRepo() {
   const dir = path.join(__dirname, 'scripts');
   // Serve the OBFUSCATED hub. The clean source (scripts/hub.lua) is gitignored
   // and never committed to this public repo.
-  const manifest = { hub: { name: 'Hub', protected: 1, file: 'hub.obf.lua' } };
+  //
+  // The key loaders are seeded here too. They used to be maintained only through
+  // the admin edit form, whose Save has been unreliable, and there was no record
+  // of what was actually live. Being in git means a deploy is reproducible and
+  // reviewable — but it also means the repo file WINS: editing these two in the
+  // admin panel will be undone by the next deploy. Edit scripts/<slug>.lua.
+  const manifest = {
+    hub:   { name: 'Hub', protected: 1, file: 'hub.obf.lua' },
+    prior: { name: 'Prior Extinction', protected: 0, file: 'prior.lua' },
+  };
   for (const [slug, meta] of Object.entries(manifest)) {
     let content;
     try { content = fs.readFileSync(path.join(dir, meta.file || (slug + '.lua')), 'utf8'); } catch { continue; }
