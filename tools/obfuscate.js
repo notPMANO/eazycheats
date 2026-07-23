@@ -153,7 +153,19 @@ for (const [orig, enc] of checks) {
 }
 
 // 2) inner chunk = prelude + D() + transformed code
-const inner = PRELUDE + '\nlocal function D(s) return _dx(s,' + luaTable(K1) + ') end\n' + code;
+//
+// D() MEMOIZES. This matters enormously: a string literal inside a per-frame loop is a D()
+// call that runs every frame, and _dx is not cheap — base64 decode plus a per-byte software
+// XOR (_bx loops ~8 times per byte, since we can't rely on bit32). The hub calls things like
+// part:GetAttribute("Group") ~39 times per player per frame; uncached that was tens of
+// thousands of full decodes per second and it visibly tanked FPS in game while the clean
+// source ran fine. Cached, each distinct string is decoded exactly once for the whole session
+// and every later call is a table lookup. Nothing is weakened: the strings are still stored
+// encrypted, this only stops us re-doing identical work.
+const inner = PRELUDE +
+  '\nlocal _C={}' +
+  '\nlocal function D(s) local v=_C[s] if v==nil then v=_dx(s,' + luaTable(K1) + ') _C[s]=v end return v end\n' +
+  code;
 
 // 3) pack the inner chunk into an XOR+base64 blob
 const blob = xorBuf(Buffer.from(inner, 'utf8'), K2).toString('base64');
