@@ -9,17 +9,11 @@ const {
 } = require('discord.js');
 const {
   TICKET_STAFF_ROLES, MOD_ROLES, VERIFIED_ROLE, TICKET_CATEGORY, TICKET_LOG_CHANNEL,
-  WELCOME_CHANNEL, FREE_KEY_TTL_HOURS, FREE_KEY_SAFE_CHANNEL, FREE_KEY_TICKET_CATEGORY,
-  PREMIUM_KEY_SAFE_CHANNEL, PREMIUM_KEY_DEFAULT_LENGTH,
-  PREMIUM_KEY_MIN_LENGTH, PREMIUM_KEY_MAX_LENGTH, KEY_ALERTS_CHANNEL, GAMES,
+  WELCOME_CHANNEL, KEY_ALERTS_CHANNEL, GAMES,
 } = require('./config');
 const { buildTicketWelcome, buildGamePicker } = require('./ticket-panel');
 const { buildWelcomeGreeting } = require('./welcome');
-const {
-  generateKey, generateFreeKey, generatePremiumKey, addKey, updateKey, getKeys, findKey, latestKeyForUser,
-  buildKeyTicketMessage, buildSafeEntry, buildPremiumKeyMessage, buildPremiumSafeEntry,
-  buildHwidAlert,
-} = require('./freekey');
+const { findKey, buildHwidAlert } = require('./freekey');
 
 const gameByKey = (k) => GAMES.find((g) => g.key === k) || null;
 
@@ -68,60 +62,15 @@ client.once('clientReady', async () => {
         options: [{ name: 'user', description: 'The user to remove', type: ApplicationCommandOptionType.User, required: true }],
       },
       {
-        name: 'premiumkey',
-        description: 'Generate a permanent premium key (mods only)',
-        defaultMemberPermissions: PermissionFlagsBits.KickMembers, // hides it from non-mods
-        options: [
-          {
-            name: 'length',
-            description: `Number of digits in the key (default ${PREMIUM_KEY_DEFAULT_LENGTH})`,
-            type: ApplicationCommandOptionType.Integer,
-            required: false,
-            minValue: PREMIUM_KEY_MIN_LENGTH,
-            maxValue: PREMIUM_KEY_MAX_LENGTH,
-          },
-          {
-            name: 'bind',
-            description: 'Lock the key to the first device (default false)',
-            type: ApplicationCommandOptionType.Boolean,
-            required: false,
-          },
-        ],
-      },
-      {
-        name: 'revoke',
-        description: 'Revoke (disable) a key (mods only)',
-        defaultMemberPermissions: PermissionFlagsBits.KickMembers,
-        options: [{ name: 'key', description: 'The key to revoke', type: ApplicationCommandOptionType.String, required: true }],
-      },
-      {
-        name: 'hwidbind',
-        description: 'Turn a key\'s HWID lock on or off (mods only)',
-        defaultMemberPermissions: PermissionFlagsBits.KickMembers,
-        options: [
-          { name: 'key', description: 'The key', type: ApplicationCommandOptionType.String, required: true },
-          { name: 'on', description: 'true = lock to device, false = unlock', type: ApplicationCommandOptionType.Boolean, required: true },
-        ],
-      },
-      {
         name: 'closeticket',
         description: 'Close & delete the current ticket (mods only)',
         defaultMemberPermissions: PermissionFlagsBits.KickMembers,
       },
     ]);
-    console.log('   Registered /add, /remove, /premiumkey, /revoke, /hwidbind, /closeticket commands.\n');
+    console.log('   Registered /add, /remove, /closeticket commands.\n');
   } catch (e) {
     console.error('   Could not register slash commands:', e.message);
   }
-
-  // Re-arm free-key expiry timers that were saved before the last restart.
-  let armed = 0;
-  for (const rec of getKeys()) {
-    if (rec.status === 'expired') continue;
-    if (rec.expiresAt <= Date.now()) expireKey(rec);
-    else { scheduleExpiry(rec); armed++; }
-  }
-  if (armed) console.log(`   Re-armed ${armed} free-key timer(s).\n`);
 });
 
 client.on('interactionCreate', async (interaction) => {
@@ -131,16 +80,10 @@ client.on('interactionCreate', async (interaction) => {
       if (id === 'verify_agree') return verifyMember(interaction);
       if (id === 'ticket_open') return openTicket(interaction);
       if (id.startsWith('game_toggle_')) return toggleGame(interaction, id.slice('game_toggle_'.length));
-      if (id.startsWith('freekey_request_')) return requestFreeKey(interaction, id.slice('freekey_request_'.length));
-      if (id === 'freekey_request') return requestFreeKey(interaction, 'prior'); // legacy old panel → Prior
-      if (id === 'freekey_new') return newFreeKey(interaction);
       if (id === 'ticket_close') return closeTicket(interaction);
     } else if (interaction.isChatInputCommand()) {
       if (interaction.commandName === 'add') return ticketAddRemove(interaction, true);
       if (interaction.commandName === 'remove') return ticketAddRemove(interaction, false);
-      if (interaction.commandName === 'premiumkey') return grantPremiumKey(interaction);
-      if (interaction.commandName === 'revoke') return revokeKeyCommand(interaction);
-      if (interaction.commandName === 'hwidbind') return hwidBindCommand(interaction);
       if (interaction.commandName === 'closeticket') return closeTicketCommand(interaction);
     }
   } catch (err) {
@@ -180,63 +123,6 @@ const ticketOwnerId = (ch) => (isTicketChannel(ch) ? ch.topic.split(':')[1] : nu
 const sanitizeName = (username) =>
   username.toLowerCase().replace(/[^a-z0-9]/g, '').slice(0, 20) || 'user';
 
-// ---------- Free key generator ----------
-
-// The EazyCheats site exposes POST /api/keys to register a key for validation.
-const KEY_API_URL = process.env.KEY_API_URL || 'https://eazycheats.com/api/keys';
-
-// Register a generated key with the site's key API. Best-effort: never throws,
-// so a slow/down/not-yet-deployed API can't block issuing the key in Discord.
-async function registerKeyWithApi(key, hours, discordId, note = 'discord free key', bindHwid, product) {
-  const secret = process.env.BOT_API_SECRET;
-  if (!secret) {
-    console.warn('BOT_API_SECRET not set — key not registered with the API (Discord-only).');
-    return;
-  }
-  const payload = { key, hours, discord_id: discordId, note };
-  if (bindHwid === true || bindHwid === false) payload.bind_hwid = bindHwid;
-  if (product) payload.product = product; // game tag so the site can game-lock the key
-  try {
-    const res = await fetch(KEY_API_URL, {
-      method: 'POST',
-      headers: { 'content-type': 'application/json', 'x-api-key': secret },
-      body: JSON.stringify(payload),
-    });
-    if (res.ok) console.log(`Registered key with API: ${key}`);
-    else {
-      const body = await res.text().catch(() => '');
-      console.error(`Key API returned ${res.status}: ${body.slice(0, 200)}`);
-    }
-  } catch (err) {
-    console.error('Key API call failed:', err.message);
-  }
-}
-
-// Call a key-API sub-route (revoke / hwid). Returns {ok, data} best-effort.
-async function callKeyApi(subpath, payload) {
-  const secret = process.env.BOT_API_SECRET;
-  if (!secret) { console.warn('BOT_API_SECRET not set — cannot call key API.'); return { ok: false }; }
-  try {
-    const res = await fetch(KEY_API_URL + subpath, {
-      method: 'POST',
-      headers: { 'content-type': 'application/json', 'x-api-key': secret },
-      body: JSON.stringify(payload),
-    });
-    const data = await res.json().catch(() => ({}));
-    if (!res.ok) console.error(`Key API ${subpath} returned ${res.status}:`, JSON.stringify(data).slice(0, 200));
-    return { ok: res.ok, data };
-  } catch (err) {
-    console.error(`Key API ${subpath} call failed:`, err.message);
-    return { ok: false };
-  }
-}
-
-// Free-key ticket topic: `freekey-owner:<gameKey>:<userId>`.
-const isFreeKeyChannel = (ch) => ch && ch.topic && ch.topic.startsWith('freekey-owner:');
-const freeKeyParts = (ch) => (isFreeKeyChannel(ch) ? ch.topic.split(':') : []); // [ , gameKey, userId]
-const freeKeyOwnerId = (ch) => freeKeyParts(ch)[2] || null;
-const freeKeyGameKey = (ch) => freeKeyParts(ch)[1] || null;
-
 // ---------- Game picker ----------
 async function toggleGame(interaction, gameKey) {
   const game = gameByKey(gameKey);
@@ -258,210 +144,11 @@ async function toggleGame(interaction, gameKey) {
   return interaction.reply({ content: `${game.emoji} Unlocked **${game.name}** — its channels are now visible!`, ...EPHEMERAL });
 }
 
-// Generate a game key, register it, post it in the ticket, log it, persist, and
-// schedule expiry. All sends are silent so nobody gets pinged.
-async function issueKey(guild, channel, userId, game) {
-  const key = generateFreeKey(game.keyPrefix);
-  const issuedAt = Date.now();
-  const expiresAt = issuedAt + FREE_KEY_TTL_HOURS * 60 * 60 * 1000;
-
-  // Register the key with the site, tagged with the game so it can be game-locked.
-  await registerKeyWithApi(key, FREE_KEY_TTL_HOURS, userId, `${game.name} free key`, undefined, game.key);
-
-  await channel.send({ ...buildKeyTicketMessage(key, userId, expiresAt), flags: SILENT }).catch(() => {});
-
-  const safe = guild.channels.cache.find(
-    (c) => c.type === ChannelType.GuildText && c.name === FREE_KEY_SAFE_CHANNEL
-  );
-  let safeMsg = null;
-  if (safe) {
-    safeMsg = await safe.send({
-      ...buildSafeEntry({ key, userId, ticketChannelId: channel.id, issuedAtMs: issuedAt, expiresAtMs: expiresAt, status: 'active', gameName: game.name }),
-      flags: SILENT,
-    }).catch(() => null);
-  }
-
-  const rec = {
-    key, userId, game: game.key, gameName: game.name, ticketChannelId: channel.id,
-    safeChannelId: safe ? safe.id : null, safeMessageId: safeMsg ? safeMsg.id : null,
-    issuedAt, expiresAt, status: 'active',
-  };
-  addKey(rec);
-  scheduleExpiry(rec);
-  return rec;
-}
-
-async function requestFreeKey(interaction, gameKey) {
-  const guild = interaction.guild;
-  const opener = interaction.user;
-  const game = gameByKey(gameKey);
-  if (!game) return interaction.reply({ content: '⚠️ Unknown game.', ...EPHEMERAL });
-  await interaction.deferReply(EPHEMERAL);
-
-  // One free-key ticket per person PER GAME — point them back to their existing one.
-  const existing = guild.channels.cache.find(
-    (c) => c.type === ChannelType.GuildText && c.topic === `freekey-owner:${game.key}:${opener.id}`
-  );
-  if (existing) {
-    return interaction.editReply({
-      content: `❗ You already have a ${game.name} free-key ticket: <#${existing.id}> — use the **Get New Key** button there when your key expires.`,
-    });
-  }
-
-  // Only the requester + mods can see a free-key ticket. It's created UNDER the
-  // game's own category — channel-level overwrites keep it private (deny @everyone,
-  // allow opener + mods), so other game-role members can't see it.
-  const modRoles = guild.roles.cache.filter((r) => MOD_ROLES.includes(r.name));
-  const category = guild.channels.cache.find(
-    (c) => c.type === ChannelType.GuildCategory && c.name === game.category
-  );
-
-  const overwrites = [
-    { id: guild.roles.everyone.id, deny: [PermissionFlagsBits.ViewChannel] },
-    {
-      id: opener.id,
-      allow: [PermissionFlagsBits.ViewChannel, PermissionFlagsBits.SendMessages, PermissionFlagsBits.ReadMessageHistory],
-    },
-    ...modRoles.map((r) => ({
-      id: r.id,
-      allow: [
-        PermissionFlagsBits.ViewChannel, PermissionFlagsBits.SendMessages,
-        PermissionFlagsBits.ManageMessages, PermissionFlagsBits.ReadMessageHistory,
-      ],
-    })),
-  ];
-
-  const channel = await guild.channels.create({
-    name: `${game.prefix}-fk-${sanitizeName(opener.username)}`,
-    type: ChannelType.GuildText,
-    parent: category ? category.id : undefined,
-    topic: `freekey-owner:${game.key}:${opener.id}`,
-    permissionOverwrites: overwrites,
-    reason: `${game.name} free key requested by ${opener.tag}`,
-  });
-
-  await issueKey(guild, channel, opener.id, game);
-  await interaction.editReply({ content: `✅ Your ${game.name} free key is ready in <#${channel.id}>!` });
-}
-
-// "Get New Key" button — only the owner, and only once their current key expired.
-async function newFreeKey(interaction) {
-  const ownerId = freeKeyOwnerId(interaction.channel);
-  const game = gameByKey(freeKeyGameKey(interaction.channel));
-  if (!ownerId || !game) {
-    return interaction.reply({ content: 'This button only works inside a free-key ticket.', ...EPHEMERAL });
-  }
-  if (interaction.user.id !== ownerId) {
-    return interaction.reply({ content: '⛔ Only the ticket owner can request a new key here.', ...EPHEMERAL });
-  }
-  const latest = latestKeyForUser(ownerId, game.key);
-  if (latest && latest.status !== 'expired' && latest.expiresAt > Date.now()) {
-    return interaction.reply({
-      content: `⏳ Your current key is still active — it expires <t:${Math.floor(latest.expiresAt / 1000)}:R>. Come back then for a new one.`,
-      ...EPHEMERAL,
-    });
-  }
-  await interaction.deferReply(EPHEMERAL);
-  await issueKey(interaction.guild, interaction.channel, ownerId, game);
-  await interaction.editReply({ content: '✅ A fresh key has been posted above.' });
-}
-
-function scheduleExpiry(rec) {
-  const delay = Math.max(0, rec.expiresAt - Date.now());
-  setTimeout(() => expireKey(rec), delay);
-}
-
-async function expireKey(rec) {
-  try {
-    updateKey(rec.key, { status: 'expired' });
-    if (rec.safeChannelId && rec.safeMessageId) {
-      const ch = await client.channels.fetch(rec.safeChannelId).catch(() => null);
-      const msg = ch && await ch.messages.fetch(rec.safeMessageId).catch(() => null);
-      if (msg) {
-        await msg.edit(buildSafeEntry({
-          key: rec.key, userId: rec.userId, ticketChannelId: rec.ticketChannelId,
-          issuedAtMs: rec.issuedAt, expiresAtMs: rec.expiresAt, status: 'expired', gameName: rec.gameName,
-        })).catch(() => {});
-      }
-    }
-    const tch = await client.channels.fetch(rec.ticketChannelId).catch(() => null);
-    if (tch) {
-      tch.send({
-        content: '⏰ This free key has now **expired** — press **Get New Key** above for a fresh one.',
-        flags: SILENT,
-      }).catch(() => {});
-    }
-  } catch (err) {
-    console.error('expireKey failed:', err.message);
-  }
-}
-
-// ---------- Premium key (mod command) ----------
-async function grantPremiumKey(interaction) {
-  const member = interaction.member;
-  const isMod = member.roles.cache.some((r) => MOD_ROLES.includes(r.name))
-    || member.permissions.has(PermissionFlagsBits.Administrator);
-  if (!isMod) {
-    return interaction.reply({ content: '⛔ Only mods can generate premium keys.', ...EPHEMERAL });
-  }
-
-  const length = interaction.options.getInteger('length') ?? PREMIUM_KEY_DEFAULT_LENGTH;
-  const bind = interaction.options.getBoolean('bind') ?? false;
-  const key = generatePremiumKey(length);
-  const issuedAt = Date.now();
-
-  // Register the permanent key (hours: 0 = never expires) with the site key API.
-  await registerKeyWithApi(key, 0, null, `premium key by ${interaction.user.tag}`, bind);
-
-  // Post the key publicly in the channel where the command was run.
-  await interaction.reply(buildPremiumKeyMessage(key, interaction.user.id));
-
-  // Archive it in #premium-key-safe (unless the command was already run there).
-  const safe = interaction.guild.channels.cache.find(
-    (c) => c.type === ChannelType.GuildText && c.name === PREMIUM_KEY_SAFE_CHANNEL
-  );
-  if (safe && safe.id !== interaction.channelId) {
-    await safe.send(buildPremiumSafeEntry(key, interaction.user.id, issuedAt)).catch(() => {});
-  }
-}
-
 const memberIsMod = (member) =>
   member.roles.cache.some((r) => MOD_ROLES.includes(r.name))
   || member.permissions.has(PermissionFlagsBits.Administrator);
 
-// ---------- /revoke ----------
-async function revokeKeyCommand(interaction) {
-  if (!memberIsMod(interaction.member)) {
-    return interaction.reply({ content: '⛔ Only mods can revoke keys.', ...EPHEMERAL });
-  }
-  const key = interaction.options.getString('key').trim();
-  const { ok, data } = await callKeyApi('/revoke', { key });
-  if (ok && data && data.revoked) {
-    return interaction.reply({ content: `✅ Revoked \`${key}\` — it will no longer validate.` });
-  }
-  if (ok) {
-    return interaction.reply({ content: `⚠️ No active key matched \`${key}\` (nothing to revoke).`, ...EPHEMERAL });
-  }
-  return interaction.reply({ content: `❌ Couldn't reach the key API to revoke \`${key}\` (see logs).`, ...EPHEMERAL });
-}
-
-// ---------- /hwidbind ----------
-async function hwidBindCommand(interaction) {
-  if (!memberIsMod(interaction.member)) {
-    return interaction.reply({ content: '⛔ Only mods can change HWID lock.', ...EPHEMERAL });
-  }
-  const key = interaction.options.getString('key').trim();
-  const on = interaction.options.getBoolean('on');
-  const { ok } = await callKeyApi('/hwid', { key, bind_hwid: on });
-  if (ok) {
-    return interaction.reply({ content: `✅ HWID lock **${on ? 'ON' : 'OFF'}** for \`${key}\`.` });
-  }
-  return interaction.reply({
-    content: `❌ Couldn't update HWID lock for \`${key}\` — is the /api/keys/hwid endpoint live? (see logs)`,
-    ...EPHEMERAL,
-  });
-}
-
+// ---------- #key-alerts (kept vault) ----------
 // Called IN-PROCESS by the web server when a key is used on a new device.
 // Pings the server owner in #key-alerts with the key, HWIDs, and its ticket.
 // export: require('./discord-bot/bot').keyUsedAlert({ key, hwid, allHwids })
@@ -546,19 +233,13 @@ async function openTicket(interaction) {
   await interaction.editReply({ content: `✅ Your ticket is ready: <#${channel.id}>` });
 }
 
-// /closeticket — mods delete the current ticket. Support tickets get a
-// transcript first; free-key tickets are just removed.
+// /closeticket — mods delete the current support ticket (transcript first).
 async function closeTicketCommand(interaction) {
   if (!memberIsMod(interaction.member)) {
     return interaction.reply({ content: '⛔ Only mods can close tickets.', ...EPHEMERAL });
   }
   const channel = interaction.channel;
   if (isTicketChannel(channel)) return closeTicket(interaction); // support: transcript + delete
-  if (isFreeKeyChannel(channel)) {
-    await interaction.reply({ content: '🔒 Closing this key ticket in 5 seconds…' });
-    setTimeout(() => channel.delete('Key ticket closed by mod').catch(() => {}), 5000);
-    return;
-  }
   return interaction.reply({ content: '⚠️ Run this inside a ticket channel.', ...EPHEMERAL });
 }
 

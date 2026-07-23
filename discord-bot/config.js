@@ -74,21 +74,8 @@ const TICKET_STAFF_ROLES = ['Moderator', 'Support'];
 // "Mods" — the only roles that can see the key system (safes + free-key tickets) for now.
 const MOD_ROLES = ['Moderator'];
 
-// --- Free key generator settings ---
-const FREE_KEY_PREFIX = 'EazyCheats-FreeKey-';
-const FREE_KEY_DIGITS = 12;            // number of random digits after the prefix
-const FREE_KEY_TTL_HOURS = 4;          // how long a free key stays valid
-const FREE_KEY_SAFE_CHANNEL = 'free-key-safe';
-const FREE_KEY_TICKET_CATEGORY = '🔑 FREE KEY TICKETS';
-
-// --- Premium key settings (mod-generated, permanent) ---
-const PREMIUM_KEY_PREFIX = 'EazyCheats-Premium-';
-const PREMIUM_KEY_DEFAULT_LENGTH = 16; // digits, if a mod doesn't specify a length
-const PREMIUM_KEY_MIN_LENGTH = 6;
-const PREMIUM_KEY_MAX_LENGTH = 40;
-const PREMIUM_KEY_SAFE_CHANNEL = 'premium-key-safe';
-
-// Channel where the bot pings on key-use / HWID alerts (mod-only).
+// Channel where the bot pings on key-use / HWID alerts (mod-only). Kept as part
+// of the KEY SAFES vaults — the old free/premium key generator has been removed.
 const KEY_ALERTS_CHANNEL = 'key-alerts';
 
 // Reusable suggestion-forum tags (used by each game's suggestions forum).
@@ -99,9 +86,6 @@ const SUGGESTION_TAGS = [
   { name: 'Approved', emoji: { name: '✅' }, moderated: true },
   { name: 'Declined', emoji: { name: '❌' }, moderated: true },
 ];
-
-// The channel (in INFORMATION) that holds the game picker.
-const GAME_PICKER_CHANNEL = 'choose-your-games';
 
 // --- GAMES ---
 // Each game gets its own role-gated category with the same set of channels,
@@ -134,17 +118,15 @@ const GAMES = [
   },
 ];
 
-// The channels every game gets (name = `<prefix>-<suffix>`).
+// The channels every game gets (name = `<prefix>-<suffix>`). The old per-game
+// free-key channel was removed with the key system — a new one is coming.
 const GAME_CHANNELS = [
   { suffix: 'general',     type: 'text' },
   { suffix: 'suggestions', type: 'forum' },
   { suffix: 'updates',     type: 'text', readonly: true },
   { suffix: 'to-do-list',  type: 'text', readonly: true },
-  { suffix: 'freekey',     type: 'text', readonly: true, freekeyPanel: true },
   { suffix: 'script',      type: 'text', readonly: true },
 ];
-
-const FREE_KEY_DIGITS_GAME = 12; // digits after each game's key prefix
 
 // Channel where closed-ticket transcripts get logged (in the STAFF category).
 const TICKET_LOG_CHANNEL = 'ticket-logs';
@@ -238,10 +220,6 @@ const TICKET_CATEGORY = '🎟️ TICKETS';
 module.exports = {
   ROLES, STAFF_ROLES, TICKET_STAFF_ROLES, MOD_ROLES, VERIFIED_ROLE, RULES,
   CATEGORIES, TICKET_CATEGORY, TICKET_LOG_CHANNEL, WELCOME_CHANNEL,
-  FREE_KEY_PREFIX, FREE_KEY_DIGITS, FREE_KEY_TTL_HOURS,
-  FREE_KEY_SAFE_CHANNEL, FREE_KEY_TICKET_CATEGORY,
-  PREMIUM_KEY_PREFIX, PREMIUM_KEY_DEFAULT_LENGTH,
-  PREMIUM_KEY_MIN_LENGTH, PREMIUM_KEY_MAX_LENGTH, PREMIUM_KEY_SAFE_CHANNEL,
   KEY_ALERTS_CHANNEL,
-  GAMES, GAME_CHANNELS, GAME_PICKER_CHANNEL, SUGGESTION_TAGS, FREE_KEY_DIGITS_GAME,
+  GAMES, GAME_CHANNELS, SUGGESTION_TAGS,
 };

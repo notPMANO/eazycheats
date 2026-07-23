@@ -10,8 +10,7 @@ function buildTicketPanel() {
     .setTitle('🎫 EazyCheats Support')
     .setDescription(
       'Need help? Click the button below to open your own **private ticket**.\n\n' +
-      'Only you and our staff can see it.\n\n' +
-      '_Looking for a free key? Head to your game\'s **generate-free-key** channel._'
+      'Only you and our staff can see it.'
     )
     .setFooter({ text: 'EazyCheats — We make you better at games' });
 
@@ -44,29 +43,6 @@ function buildGamePicker(games) {
       .setLabel(g.name)
       .setEmoji(g.emoji)
       .setStyle(ButtonStyle.Secondary))
-  );
-
-  return { embeds: [embed], components: [row] };
-}
-
-// Free-key panel (in each game's <prefix>-freekey channel).
-function buildFreeKeyPanel(game) {
-  const embed = new EmbedBuilder()
-    .setColor(0x2ecc71)
-    .setTitle(`${game.emoji} ${game.name} — Free Key`)
-    .setDescription(
-      'Click below to open your private key ticket and get an auto-generated ' +
-      `**free key** for ${game.name} (valid 4 hours).\n\n` +
-      'You get one ticket — when your key expires, press **Get New Key** inside it.'
-    )
-    .setFooter({ text: 'EazyCheats — free key' });
-
-  const row = new ActionRowBuilder().addComponents(
-    new ButtonBuilder()
-      .setCustomId(`freekey_request_${game.key}`)
-      .setLabel('Generate Free Key')
-      .setEmoji('🔑')
-      .setStyle(ButtonStyle.Success)
   );
 
   return { embeds: [embed], components: [row] };
@@ -105,16 +81,12 @@ function buildStaffCommandsInfo() {
       { name: '🎫 Tickets', value:
         '`/add <user>` — add someone to the current ticket\n' +
         '`/remove <user>` — remove someone from the current ticket\n' +
-        '`/closeticket` — close & delete the current ticket (support or free-key)' },
-      { name: '🔑 Keys', value:
-        '`/premiumkey [length] [bind]` — generate a **permanent** premium key\n' +
-        '`/revoke <key>` — disable a key so it stops validating\n' +
-        '`/hwidbind <key> <on>` — turn a key\'s device-lock on/off' },
+        '`/closeticket` — close & delete the current ticket' },
     )
     .setFooter({ text: 'EazyCheats — staff reference' });
   return { embeds: [embed] };
 }
 
 module.exports = {
-  buildTicketPanel, buildTicketWelcome, buildGamePicker, buildFreeKeyPanel, buildStaffCommandsInfo,
+  buildTicketPanel, buildTicketWelcome, buildGamePicker, buildStaffCommandsInfo,
 };

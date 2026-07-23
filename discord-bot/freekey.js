@@ -1,18 +1,14 @@
 // ===================================================================
-//  freekey.js — free key generation, persistence, and message builders.
-//  Keys are saved to disk so their 4-hour timers survive bot restarts.
+//  freekey.js — leftover helpers for the #key-alerts vault.
+//  The free/premium key GENERATOR was removed (new key system incoming).
+//  What remains only supports keyUsedAlert(): look a key up in the old
+//  on-disk store (for enrichment) and build the HWID-alert embed.
 // ===================================================================
 const fs = require('fs');
 const path = require('path');
-const crypto = require('crypto');
-const { EmbedBuilder, ActionRowBuilder, ButtonBuilder, ButtonStyle } = require('discord.js');
-const {
-  FREE_KEY_PREFIX, FREE_KEY_DIGITS, FREE_KEY_TTL_HOURS,
-  PREMIUM_KEY_PREFIX, PREMIUM_KEY_DEFAULT_LENGTH,
-  PREMIUM_KEY_MIN_LENGTH, PREMIUM_KEY_MAX_LENGTH,
-} = require('./config');
+const { EmbedBuilder } = require('discord.js');
 
-// --- storage ---
+// --- storage (read-only now; kept so old records still enrich alerts) ---
 const DATA_DIR = process.env.DATA_DIR || path.join(__dirname, 'data');
 const FILE = path.join(DATA_DIR, 'freekeys.json');
 let store = null;
@@ -24,123 +20,7 @@ function load() {
   if (!Array.isArray(store.keys)) store.keys = [];
   return store;
 }
-function save() {
-  fs.mkdirSync(path.dirname(FILE), { recursive: true });
-  fs.writeFileSync(FILE, JSON.stringify(store, null, 2));
-}
-function addKey(rec) { load(); store.keys.push(rec); save(); }
-function updateKey(key, patch) {
-  load();
-  const k = store.keys.find((x) => x.key === key);
-  if (k) { Object.assign(k, patch); save(); }
-}
-function getKeys() { load(); return store.keys; }
 function findKey(key) { load(); return store.keys.find((x) => x.key === key) || null; }
-// Most recently issued key for a user, optionally for one game. Used by "Get New Key".
-function latestKeyForUser(userId, game) {
-  load();
-  return store.keys
-    .filter((x) => x.userId === userId && (game ? x.game === game : true))
-    .sort((a, b) => b.issuedAt - a.issuedAt)[0] || null;
-}
-
-const randomDigits = (n) => {
-  let s = '';
-  for (let i = 0; i < n; i++) s += crypto.randomInt(0, 10);
-  return s;
-};
-
-// --- key generation: <prefix><N random digits> ---
-function generateKey() {
-  return FREE_KEY_PREFIX + randomDigits(FREE_KEY_DIGITS);
-}
-// Per-game free key, e.g. Prior-Free-Key-############ / PD-Free-Key-############
-function generateFreeKey(prefix) {
-  return prefix + randomDigits(FREE_KEY_DIGITS);
-}
-
-// --- premium key: EazyCheats-Premium-<length random digits> (mod-set length) ---
-function generatePremiumKey(length) {
-  let n = Number.isInteger(length) ? length : PREMIUM_KEY_DEFAULT_LENGTH;
-  n = Math.min(PREMIUM_KEY_MAX_LENGTH, Math.max(PREMIUM_KEY_MIN_LENGTH, n));
-  return PREMIUM_KEY_PREFIX + randomDigits(n);
-}
-
-const sec = (ms) => Math.floor(ms / 1000);
-
-// --- message builders ---
-
-// Posted inside the requester's own free-key ticket.
-function buildKeyTicketMessage(key, userId, expiresAtMs) {
-  const embed = new EmbedBuilder()
-    .setColor(0x2ecc71)
-    .setTitle('🔑 Your Free Key')
-    .setDescription(
-      `Hey <@${userId}>, here is your free key:\n\n` +
-      '```\n' + key + '\n```\n' +
-      `⏳ Valid for **${FREE_KEY_TTL_HOURS} hours** — expires <t:${sec(expiresAtMs)}:R> ` +
-      `(<t:${sec(expiresAtMs)}:f>).\n\n` +
-      'Copy it now. When it expires, press **Get New Key** below for a fresh one.'
-    )
-    .setFooter({ text: 'EazyCheats — free key' });
-
-  const row = new ActionRowBuilder().addComponents(
-    new ButtonBuilder()
-      .setCustomId('freekey_new')
-      .setLabel('Get New Key')
-      .setEmoji('🔄')
-      .setStyle(ButtonStyle.Success)
-  );
-  return { content: `<@${userId}>`, embeds: [embed], components: [row] };
-}
-
-// The record entry in #free-key-safe (mod-only). status: 'active' | 'expired'.
-function buildSafeEntry({ key, userId, ticketChannelId, issuedAtMs, expiresAtMs, status, gameName }) {
-  const active = status !== 'expired';
-  const embed = new EmbedBuilder()
-    .setColor(active ? 0x2ecc71 : 0xe74c3c)
-    .setTitle(active ? '🔑 Free Key Issued' : '🔑 Free Key (Expired)')
-    .addFields(
-      { name: 'Key', value: '```\n' + key + '\n```' },
-      { name: 'Game', value: gameName || '—', inline: true },
-      { name: 'User', value: `<@${userId}>`, inline: true },
-      { name: 'Ticket', value: ticketChannelId ? `<#${ticketChannelId}>` : 'unknown', inline: true },
-      { name: 'Status', value: active ? '🟢 Active' : '🔴 Expired', inline: true },
-      { name: 'Issued', value: `<t:${sec(issuedAtMs)}:f>`, inline: true },
-      { name: active ? 'Expires' : 'Expired', value: `<t:${sec(expiresAtMs)}:R>`, inline: true },
-    )
-    .setFooter({ text: 'EazyCheats — free key safe' });
-  return { embeds: [embed] };
-}
-
-// Public reply posted in the channel where a mod runs the premium command.
-function buildPremiumKeyMessage(key, modId) {
-  const embed = new EmbedBuilder()
-    .setColor(0xf1c40f)
-    .setTitle('💎 Premium Key Generated')
-    .setDescription(
-      '```\n' + key + '\n```\n' +
-      '♾️ **Permanent** — this key never expires.\n' +
-      `Generated by <@${modId}>.`
-    )
-    .setFooter({ text: 'EazyCheats — premium key' });
-  return { embeds: [embed] };
-}
-
-// The record entry in #premium-key-safe.
-function buildPremiumSafeEntry(key, modId, issuedAtMs) {
-  const embed = new EmbedBuilder()
-    .setColor(0xf1c40f)
-    .setTitle('💎 Premium Key Issued')
-    .addFields(
-      { name: 'Key', value: '```\n' + key + '\n```' },
-      { name: 'Generated by', value: `<@${modId}>`, inline: true },
-      { name: 'Lifetime', value: '♾️ Permanent', inline: true },
-      { name: 'Issued', value: `<t:${sec(issuedAtMs)}:f>`, inline: true },
-    )
-    .setFooter({ text: 'EazyCheats — premium key safe' });
-  return { embeds: [embed] };
-}
 
 // Alert embed posted in #key-alerts when a key is used on a new device.
 function buildHwidAlert({ key, hwid, allHwids, ticketChannelId, userId }) {
@@ -161,8 +41,4 @@ function buildHwidAlert({ key, hwid, allHwids, ticketChannelId, userId }) {
   return { embeds: [embed] };
 }
 
-module.exports = {
-  generateKey, generateFreeKey, generatePremiumKey, addKey, updateKey, getKeys, findKey, latestKeyForUser,
-  buildKeyTicketMessage, buildSafeEntry,
-  buildPremiumKeyMessage, buildPremiumSafeEntry, buildHwidAlert,
-};
+module.exports = { findKey, buildHwidAlert };

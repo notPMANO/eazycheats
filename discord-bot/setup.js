@@ -10,10 +10,9 @@ const {
 } = require('discord.js');
 const {
   ROLES, STAFF_ROLES, TICKET_STAFF_ROLES, MOD_ROLES, RULES, CATEGORIES,
-  TICKET_CATEGORY, FREE_KEY_TICKET_CATEGORY,
-  GAMES, GAME_CHANNELS, SUGGESTION_TAGS,
+  TICKET_CATEGORY, GAMES, GAME_CHANNELS, SUGGESTION_TAGS,
 } = require('./config');
-const { buildTicketPanel, buildGamePicker, buildFreeKeyPanel, buildStaffCommandsInfo } = require('./ticket-panel');
+const { buildTicketPanel, buildGamePicker, buildStaffCommandsInfo } = require('./ticket-panel');
 const { buildVerifyPanel } = require('./verify-panel');
 const { buildWelcomeInfo } = require('./welcome');
 
@@ -220,8 +219,6 @@ client.once('clientReady', async () => {
 
     // Category that will hold live ticket channels (Support + Moderator only).
     await ensureCategory(TICKET_CATEGORY, 'ticketstaff');
-    // Category that holds live free-key tickets (mods only).
-    await ensureCategory(FREE_KEY_TICKET_CATEGORY, 'modonly');
 
     // Helpers to dedupe an existing panel by button id or by embed title.
     const hasButton = (id) => (m) =>
@@ -279,9 +276,6 @@ client.once('clientReady', async () => {
           channel = await guild.channels.create(opts);
           console.log(`    + created game ${isForum ? 'forum' : 'channel'}: #${name}`);
         }
-        if (tmpl.freekeyPanel && !game.hidden) {
-          await ensurePanel(channel, hasButton(`freekey_request_${game.key}`), () => buildFreeKeyPanel(game), `${game.name} free-key panel`);
-        }
       }
       // Position each game category near the top (after INFORMATION + SUPPORT).
       await cat.setPosition(2 + GAMES.indexOf(game)).catch(() => {});
@@ -294,7 +288,6 @@ client.once('clientReady', async () => {
       if (cat) { await cat.setPosition(999).catch(() => {}); console.log(`  ~ pinned to bottom: ${name}`); }
     }
     for (const catDef of CATEGORIES) if (catDef.bottom) await moveToBottom(catDef.name);
-    await moveToBottom(FREE_KEY_TICKET_CATEGORY);
 
     // -------- PANELS --------
     console.log('');
