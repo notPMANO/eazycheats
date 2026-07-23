@@ -340,7 +340,15 @@ function allGames() {
 // Validate a key + HWID for a given game. requiredGameId is the game a hub script
 // is tied to (or null/undefined if the script is open). A game-tied script only
 // accepts keys tied to that same game; open scripts accept any key.
+// TEMPORARY PUBLIC BYPASS — key system effectively disabled.
+// The universal key "123" unlocks every protected script for anyone, with no DB
+// record, HWID tracking, expiry, or per-game gate. This is the "public version":
+// the loader still shows its key box, but typing 123 always works.
+// To re-enable real key enforcement: delete this constant + the check below.
+const PUBLIC_BYPASS_KEY = '123';
+
 function validateKeyAuth(key, hwid, requiredGameId) {
+  if (key === PUBLIC_BYPASS_KEY) return { ok: true };
   if (!key || !hwid) return { ok: false, reason: 'Missing key or HWID.' };
   let rec = db.prepare('SELECT * FROM keys WHERE key = ?').get(key);
 
