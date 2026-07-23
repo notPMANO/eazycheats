@@ -59,6 +59,18 @@ db.exec(`
     created_at TEXT NOT NULL DEFAULT (datetime('now'))
   );
 
+  -- Hosted images, served at /uploads/<file>. Same idea as the scripts table but
+  -- for media: upload once in the admin panel, then reference the public URL
+  -- anywhere (in-game GUI banners, product art, Discord embeds).
+  CREATE TABLE IF NOT EXISTS images (
+    id         INTEGER PRIMARY KEY AUTOINCREMENT,
+    name       TEXT NOT NULL,
+    path       TEXT NOT NULL,
+    mime       TEXT,
+    size       INTEGER,
+    created_at TEXT NOT NULL DEFAULT (datetime('now'))
+  );
+
   -- Access keys. Bound to the first HWID that uses them; a second HWID trips the
   -- leak alert and disables the key. expires_at NULL = permanent.
   CREATE TABLE IF NOT EXISTS keys (

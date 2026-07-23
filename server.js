@@ -870,6 +870,37 @@ app.post('/admin/scripts/:id/delete', requireAdmin, (req, res) => {
   res.redirect('/admin/scripts');
 });
 
+// ---- Images (hosted media, served at /uploads/<file>) ----
+// The scripts table's counterpart for media: upload once here, then use the
+// public URL anywhere. Files land on the same persistent disk as the DB, so
+// they survive redeploys.
+app.get('/admin/images', requireAdmin, (req, res) => {
+  const images = db.prepare('SELECT * FROM images ORDER BY id DESC').all();
+  res.render('admin/images', { images, base: baseUrl(req) });
+});
+app.post('/admin/images', requireAdmin, upload.single('image'), (req, res) => {
+  if (!req.file) {
+    flash(req, 'error', 'Choose an image to upload.');
+    return res.redirect('/admin/images');
+  }
+  // Fall back to the original filename (minus extension) when no name is typed.
+  const typed = String(req.body.name || '').trim();
+  const name = typed || String(req.file.originalname || req.file.filename).replace(/\.[^.]+$/, '');
+  const publicPath = '/uploads/' + req.file.filename;
+  db.prepare('INSERT INTO images (name, path, mime, size) VALUES (?, ?, ?, ?)')
+    .run(name, publicPath, req.file.mimetype, req.file.size);
+  flash(req, 'success', `Uploaded "${name}".`);
+  res.redirect('/admin/images');
+});
+app.post('/admin/images/:id/delete', requireAdmin, (req, res) => {
+  const image = db.prepare('SELECT * FROM images WHERE id = ?').get(req.params.id);
+  if (!image) return res.redirect('/admin/images');
+  deleteUpload(image.path);   // remove the file from disk, then the row
+  db.prepare('DELETE FROM images WHERE id = ?').run(image.id);
+  flash(req, 'success', `Deleted "${image.name}".`);
+  res.redirect('/admin/images');
+});
+
 // ---- Keys ----
 app.get('/admin/keys', requireAdmin, (req, res) => {
   const keys = db.prepare(

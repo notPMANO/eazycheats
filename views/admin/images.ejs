@@ -1,0 +1,71 @@
+<% pageTitle = 'Images' %>
+<%- include('../partials/header') %>
+
+<section class="page-head">
+  <div class="page-head-inner">
+    <div>
+      <nav class="crumbs"><a href="/admin">Admin</a> <span>/</span> Images</nav>
+      <h1>Images</h1>
+      <p class="muted">Hosted media, served at <code><%= base %>/uploads/&lt;file&gt;</code>. Upload once, then use the URL anywhere.</p>
+    </div>
+    <div class="page-head-actions">
+      <a href="/admin/scripts" class="btn btn-ghost">Scripts</a>
+      <a href="/admin/keys" class="btn btn-ghost">Keys</a>
+    </div>
+  </div>
+</section>
+
+<section class="container narrow">
+  <form action="/admin/images" method="POST" enctype="multipart/form-data" class="form card-form">
+    <label>Name <small class="muted">(optional)</small>
+      <input type="text" name="name" placeholder="e.g. EazyCheats logo">
+    </label>
+
+    <label>Image</label>
+    <div class="dropzone" id="dropzone">
+      <input type="file" name="image" id="fileInput" accept="image/png,image/jpeg,image/gif,image/webp" hidden required>
+      <div class="dropzone-inner">
+        <img id="preview" class="dropzone-preview" src="" alt="" style="display:none">
+        <div id="dropPrompt" class="dropzone-prompt">
+          <span class="dz-icon">⬆</span>
+          <p>Drop an image here or <span class="link">click to choose</span></p>
+          <small class="muted">PNG, JPG, GIF or WEBP · up to 5MB</small>
+        </div>
+      </div>
+    </div>
+
+    <div class="form-actions">
+      <button type="submit" class="btn btn-primary">Upload image</button>
+    </div>
+  </form>
+</section>
+
+<section class="container">
+  <% if (images.length === 0) { %>
+    <div class="empty"><p>No images yet.</p></div>
+  <% } else { %>
+    <div class="admin-list">
+      <% images.forEach(function(img) { %>
+        <div class="admin-row">
+          <div class="admin-row-icon">
+            <img src="<%= img.path %>" alt="">
+          </div>
+          <div class="admin-row-main">
+            <span class="admin-row-title"><%= img.name %></span>
+            <span class="muted"><%= base %><%= img.path %><% if (img.size) { %> · <%= Math.round(img.size / 1024) %> KB<% } %></span>
+          </div>
+          <div class="admin-row-actions">
+            <button type="button" class="btn btn-sm btn-ghost js-copy" data-copy="<%= base %><%= img.path %>">Copy URL</button>
+            <a href="<%= img.path %>" target="_blank" rel="noopener" class="btn btn-sm btn-ghost">Open</a>
+            <form action="/admin/images/<%= img.id %>/delete" method="POST" class="inline js-confirm"
+                  data-confirm="Delete <%= img.name %>? Anything using this URL will break.">
+              <button type="submit" class="btn btn-sm btn-danger">Delete</button>
+            </form>
+          </div>
+        </div>
+      <% }); %>
+    </div>
+  <% } %>
+</section>
+
+<%- include('../partials/footer') %>
