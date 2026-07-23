@@ -94,3 +94,20 @@ if (yearEl) yearEl.textContent = new Date().getFullYear();
     }
   });
 })();
+
+// Live countdown for the free key ([data-expires] = ISO timestamp).
+(function () {
+  var el = document.getElementById('keyCountdown');
+  if (!el) return;
+  var end = new Date(el.getAttribute('data-expires')).getTime();
+  function tick() {
+    var ms = end - Date.now();
+    if (ms <= 0) { el.textContent = 'expired — generate a new one'; return; }
+    var h = Math.floor(ms / 3600000);
+    var m = Math.floor((ms % 3600000) / 60000);
+    var s = Math.floor((ms % 60000) / 1000);
+    el.textContent = (h > 0 ? h + 'h ' : '') + m + 'm ' + s + 's';
+    setTimeout(tick, 1000);
+  }
+  tick();
+})();

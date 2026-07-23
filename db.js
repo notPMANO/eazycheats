@@ -95,6 +95,20 @@ db.exec(`
     first_seen TEXT NOT NULL DEFAULT (datetime('now')),
     UNIQUE(key_id, hwid)
   );
+
+  -- One-time nonces for the web (LootLabs-gated) free-key generator. When a user
+  -- starts the locker flow we insert a pending nonce; the LootLabs callback can
+  -- only mint a key by presenting an unused, unexpired nonce. Encryption stops
+  -- forging the callback URL; this table stops replaying it.
+  CREATE TABLE IF NOT EXISTS key_nonces (
+    token       TEXT PRIMARY KEY,
+    game_id     INTEGER,
+    ip          TEXT,
+    issued_key  TEXT,
+    used        INTEGER NOT NULL DEFAULT 0,
+    expires_at  TEXT NOT NULL,
+    created_at  TEXT NOT NULL DEFAULT (datetime('now'))
+  );
 `);
 
 // --- Migrations: add columns to existing databases if they're missing ---

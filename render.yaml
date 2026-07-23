@@ -57,3 +57,10 @@ services:
         value: "1528299797008875600"
       - key: CLIENT_ID
         value: "1528303044888891582"
+      # --- LootLabs (ad-gated free-key generator) ---
+      # API token is a SECRET — set it in the Render dashboard (Environment tab).
+      - key: LOOTLABS_API_TOKEN
+        sync: false
+      # The base monetized link created in the LootLabs panel (public, not secret).
+      - key: LOOTLABS_LOOT_URL
+        value: https://lootdest.org/s?1hA443nY

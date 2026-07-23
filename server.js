@@ -11,6 +11,7 @@ const fs = require('fs');
 const db = require('./db');
 const config = require('./config');
 const mailer = require('./mailer');
+const lootlabs = require('./lootlabs');
 const SqliteStore = require('./session-store')(session);
 
 const BCRYPT_COST = 12;
@@ -115,6 +116,16 @@ const authLimiter = rateLimit({
   standardHeaders: true,
   legacyHeaders: false,
   message: 'Too many attempts. Please wait a few minutes and try again.',
+});
+
+// Cap how often one IP can kick off the free-key locker flow, so nobody can
+// hammer the LootLabs API or farm nonces.
+const keyGenLimiter = rateLimit({
+  windowMs: 10 * 60 * 1000,
+  max: 20, // 20 locker starts per 10 min per IP
+  standardHeaders: true,
+  legacyHeaders: false,
+  message: 'Too many key requests. Please wait a few minutes and try again.',
 });
 
 // Make current user + site info available to every template.
@@ -404,6 +415,23 @@ function validateKeyAuth(key, hwid, requiredGameId) {
   return { ok: true };
 }
 
+// Mint and store a new access key. Shared by the bot API (/api/keys) and the web
+// locker callback so both go through one code path. Returns
+// { ok, key, expires_at, bind_hwid, game_id } or { ok:false, status, error }.
+function mintKey({ key, note = 'discord', discordId = null, bindHwid = 0, hours = 4, gameId = null } = {}) {
+  const expires = hours > 0 ? new Date(Date.now() + hours * 3600 * 1000).toISOString() : null;
+  let k = key ? String(key).trim().slice(0, 100) : null;
+  if (!k) {
+    do { k = genKeyString(); } while (db.prepare('SELECT 1 FROM keys WHERE key = ?').get(k));
+  }
+  if (db.prepare('SELECT id FROM keys WHERE key = ?').get(k)) {
+    return { ok: false, status: 409, error: 'Key already exists.', key: k };
+  }
+  db.prepare('INSERT INTO keys (key, note, discord_id, bind_hwid, expires_at, game_id) VALUES (?, ?, ?, ?, ?, ?)')
+    .run(k, String(note).slice(0, 200), discordId, bindHwid ? 1 : 0, expires, gameId);
+  return { ok: true, key: k, expires_at: expires, bind_hwid: bindHwid ? 1 : 0, game_id: gameId };
+}
+
 // ============================================================
 //  PUBLIC ROUTES
 // ============================================================
@@ -453,6 +481,96 @@ app.get('/s/:slug', (req, res) => {
 });
 
 // ============================================================
+//  FREE KEY GENERATOR (web, LootLabs ad-gated)
+//    GET  /key           → the generator page
+//    POST /key/start     → create a one-time nonce, send the user to the ad locker
+//    GET  /key/callback  → LootLabs redirects here after the tasks; verify + mint
+//  Revenue comes from users completing the locker; the key is only minted once
+//  they return through the encrypted callback with a valid one-time nonce.
+// ============================================================
+const FREE_KEY_HOURS = 4;   // free key lifetime (short = users return = more completions)
+const NONCE_TTL_MIN = 30;   // how long a started locker run stays valid to complete
+
+// The user's current active free key, if any — kept in their session so a page
+// refresh re-shows it instead of forcing another locker run. Returns null if it
+// expired or was revoked.
+function activeSessionKey(req) {
+  const fk = req.session && req.session.freeKey;
+  if (!fk || !fk.key || !fk.expiresAt) return null;
+  if (new Date(fk.expiresAt).getTime() <= Date.now()) return null;
+  const rec = db.prepare('SELECT disabled FROM keys WHERE key = ?').get(fk.key);
+  if (!rec || rec.disabled) return null;
+  return fk;
+}
+
+app.get('/key', (req, res) => {
+  res.render('key', {
+    activeKey: activeSessionKey(req),
+    configured: lootlabs.isConfigured(),
+    hours: FREE_KEY_HOURS,
+    justIssued: false,
+  });
+});
+
+app.post('/key/start', keyGenLimiter, async (req, res) => {
+  if (!lootlabs.isConfigured()) {
+    flash(req, 'error', 'The key system is being set up — please check back soon.');
+    return res.redirect('/key');
+  }
+  // One-time nonce the callback must present to mint a key.
+  const token = crypto.randomBytes(24).toString('hex');
+  const expiresAt = new Date(Date.now() + NONCE_TTL_MIN * 60 * 1000).toISOString();
+  const gameId = resolveGameId(req.body.game); // null unless a known game is named
+  db.prepare('INSERT INTO key_nonces (token, game_id, ip, expires_at) VALUES (?, ?, ?, ?)')
+    .run(token, gameId, req.ip || null, expiresAt);
+
+  const base = (config.APP_URL || `${req.protocol}://${req.get('host')}`).replace(/\/+$/, '');
+  const callback = `${base}/key/callback?token=${token}`;
+  const lockerUrl = await lootlabs.buildLockerUrl(callback);
+  if (!lockerUrl) {
+    flash(req, 'error', "Couldn't start the ad step just now — please try again in a moment.");
+    return res.redirect('/key');
+  }
+  return res.redirect(lockerUrl);
+});
+
+app.get('/key/callback', (req, res) => {
+  const token = String(req.query.token || '');
+  const row = token ? db.prepare('SELECT * FROM key_nonces WHERE token = ?').get(token) : null;
+
+  // Invalid / expired / already-consumed-by-another-key nonce.
+  if (!row || new Date(row.expires_at).getTime() <= Date.now()) {
+    const existing = activeSessionKey(req);
+    if (existing) return res.render('key', { activeKey: existing, configured: true, hours: FREE_KEY_HOURS, justIssued: false });
+    flash(req, 'error', 'That key link expired or was already used. Generate a fresh one.');
+    return res.redirect('/key');
+  }
+
+  // Reuse the key if this nonce already minted one (double-click / refresh).
+  let key = row.issued_key;
+  if (!key) {
+    const minted = mintKey({ note: 'web free key', bindHwid: 0, hours: FREE_KEY_HOURS, gameId: row.game_id });
+    if (!minted.ok) {
+      flash(req, 'error', 'Something went wrong issuing your key. Please try again.');
+      return res.redirect('/key');
+    }
+    key = minted.key;
+    db.prepare('UPDATE key_nonces SET used = 1, issued_key = ? WHERE token = ?').run(key, token);
+  }
+
+  const rec = db.prepare('SELECT expires_at FROM keys WHERE key = ?').get(key);
+  const expiresAt = rec && rec.expires_at ? rec.expires_at
+    : new Date(Date.now() + FREE_KEY_HOURS * 3600 * 1000).toISOString();
+  req.session.freeKey = { key, expiresAt, gameId: row.game_id };
+  return res.render('key', {
+    activeKey: { key, expiresAt },
+    configured: true,
+    hours: FREE_KEY_HOURS,
+    justIssued: true,
+  });
+});
+
+// ============================================================
 //  BOT API — the Discord bot registers each key it generates here, so the
 //  loader's key check (which reads the DB) accepts it. One source of truth.
 //  Auth: shared secret in the BOT_API_SECRET env var, sent as `x-api-key`
@@ -473,7 +591,6 @@ app.post('/api/keys', express.json(), (req, res) => {
   const bindHwid = (body.bind_hwid === true || body.bind_hwid === 1 || body.bind_hwid === '1') ? 1 : 0;
   // Default 4h lifetime (matches the bot's free keys); hours:0 = permanent.
   const hours = body.hours == null ? 4 : parseFloat(body.hours);
-  const expires = hours > 0 ? new Date(Date.now() + hours * 3600 * 1000).toISOString() : null;
 
   // Optional: tie the key to a game (id, slug, or title). The bot passes this so
   // each game's keys are separate. Unknown game = 400 (don't mint an unbound key).
@@ -484,18 +601,9 @@ app.post('/api/keys', express.json(), (req, res) => {
   }
 
   // Use the key the bot supplies, or mint one and return it if it didn't send one.
-  let key = body.key ? String(body.key).trim().slice(0, 100) : null;
-  if (!key) {
-    do { key = genKeyString(); } while (db.prepare('SELECT 1 FROM keys WHERE key = ?').get(key));
-  }
-  // Don't silently overwrite an existing key — report the collision instead.
-  if (db.prepare('SELECT id FROM keys WHERE key = ?').get(key)) {
-    return res.status(409).json({ ok: false, error: 'Key already exists.', key });
-  }
-
-  db.prepare('INSERT INTO keys (key, note, discord_id, bind_hwid, expires_at, game_id) VALUES (?, ?, ?, ?, ?, ?)')
-    .run(key, note, discordId, bindHwid, expires, gameId);
-  return res.json({ ok: true, key, expires_at: expires, bind_hwid: bindHwid, game_id: gameId });
+  const result = mintKey({ key: body.key, note, discordId, bindHwid, hours, gameId });
+  if (!result.ok) return res.status(result.status || 400).json(result);
+  return res.json(result);
 });
 
 // Revoke (disable) a key early — e.g. the bot cleaning up on demand.

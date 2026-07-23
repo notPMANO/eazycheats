@@ -1,0 +1,99 @@
+<% pageTitle = 'Free Key' %>
+<%- include('partials/header') %>
+
+<style>
+  .key-wrap { max-width: 640px; margin: 0 auto; }
+  .key-steps { display: grid; gap: .75rem; margin: 1.5rem 0; padding: 0; list-style: none; }
+  .key-steps li { display: flex; gap: .75rem; align-items: flex-start; }
+  .key-steps .step-n {
+    flex: 0 0 1.6rem; height: 1.6rem; border-radius: 50%;
+    display: grid; place-items: center; font-weight: 700; font-size: .85rem;
+    background: var(--accent, #6c5ce7); color: #fff;
+  }
+  .key-box {
+    display: flex; gap: .5rem; margin: 1rem 0;
+  }
+  .key-field {
+    flex: 1; font-family: ui-monospace, Menlo, Consolas, monospace;
+    font-size: 1.05rem; letter-spacing: .5px; text-align: center;
+    padding: .85rem 1rem; border-radius: 10px;
+    border: 1px solid rgba(255,255,255,.15); background: rgba(255,255,255,.04);
+    color: inherit;
+  }
+  .key-meta { text-align: center; margin-top: .25rem; }
+  .key-cta { text-align: center; margin: 1.5rem 0; }
+  .key-howto { margin-top: 2rem; }
+  .key-howto code {
+    font-family: ui-monospace, Menlo, Consolas, monospace;
+    background: rgba(255,255,255,.06); padding: .15rem .4rem; border-radius: 5px;
+  }
+</style>
+
+<section class="page-head">
+  <div class="page-head-inner">
+    <div>
+      <nav class="crumbs"><a href="/">Home</a> <span>/</span> Free Key</nav>
+      <h1>Get your free key</h1>
+      <p class="muted">Complete two quick steps to unlock a <%= hours %>-hour key.</p>
+    </div>
+  </div>
+</section>
+
+<section class="container">
+  <div class="key-wrap">
+
+    <% if (!configured) { %>
+      <div class="dev-note">
+        The free-key system is being set up right now. Please check back shortly, or
+        grab a key from our <a href="https://discord.gg/uVXQTGefvq" target="_blank" rel="noopener">Discord</a>.
+      </div>
+
+    <% } else if (activeKey) { %>
+      <% if (typeof justIssued !== 'undefined' && justIssued) { %>
+        <div class="flash flash-success">🎉 Your key is ready! Copy it below.</div>
+      <% } %>
+
+      <p class="muted" style="text-align:center;">Here's your active key:</p>
+      <div class="key-box">
+        <input id="keyValue" class="key-field" type="text" readonly value="<%= activeKey.key %>">
+        <button type="button" class="btn btn-primary js-copy" data-copy="<%= activeKey.key %>">Copy</button>
+      </div>
+      <p class="key-meta muted">
+        Expires in <strong id="keyCountdown" data-expires="<%= activeKey.expiresAt %>">…</strong>
+      </p>
+
+      <div class="key-cta">
+        <form action="/key/start" method="POST" class="inline">
+          <button type="submit" class="btn btn-ghost">Get a new key</button>
+        </form>
+      </div>
+
+    <% } else { %>
+      <ol class="key-steps">
+        <li><span class="step-n">1</span><span>Click <strong>Get Free Key</strong> — you'll complete two short ad steps.</span></li>
+        <li><span class="step-n">2</span><span>You'll be sent back here automatically with your key.</span></li>
+        <li><span class="step-n">3</span><span>Paste the key into the loader when it asks.</span></li>
+      </ol>
+
+      <div class="key-cta">
+        <form action="/key/start" method="POST">
+          <button type="submit" class="btn btn-primary btn-lg">Get Free Key</button>
+        </form>
+        <p class="muted" style="margin-top:.75rem;">Free key · valid <%= hours %> hours</p>
+      </div>
+    <% } %>
+
+    <div class="key-howto">
+      <h3>How to use your key</h3>
+      <ol class="key-steps">
+        <li><span class="step-n">1</span><span>Open your executor and load the EazyCheats script.</span></li>
+        <li><span class="step-n">2</span><span>When prompted, paste your key.</span></li>
+        <li><span class="step-n">3</span><span>You're in. When the key expires, come back and grab a new one.</span></li>
+      </ol>
+      <p class="muted">Keys are for entertainment &amp; educational use. Don't share your key — each one is tracked to the device it's used on.</p>
+    </div>
+
+  </div>
+</section>
+
+<%- include('partials/footer') %>
