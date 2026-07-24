@@ -12,7 +12,7 @@ const {
   ROLES, STAFF_ROLES, TICKET_STAFF_ROLES, MOD_ROLES, RULES, CATEGORIES,
   TICKET_CATEGORY, GAMES, GAME_CHANNELS, SUGGESTION_TAGS,
 } = require('./config');
-const { buildTicketPanel, buildGamePicker, buildStaffCommandsInfo } = require('./ticket-panel');
+const { buildTicketPanel, buildGamePicker, buildFreeKeyLinkPanel, buildStaffCommandsInfo } = require('./ticket-panel');
 const { buildVerifyPanel } = require('./verify-panel');
 const { buildWelcomeInfo } = require('./welcome');
 
@@ -250,6 +250,8 @@ client.once('clientReady', async () => {
       }
 
       for (const tmpl of GAME_CHANNELS) {
+        // Some channels are limited to certain games (e.g. free-key = Prior only).
+        if (tmpl.onlyGames && !tmpl.onlyGames.includes(game.key)) continue;
         const name = `${game.prefix}-${tmpl.suffix}`;
         const isForum = tmpl.type === 'forum';
         const type = isForum ? ChannelType.GuildForum : ChannelType.GuildText;
@@ -275,6 +277,9 @@ client.once('clientReady', async () => {
           }
           channel = await guild.channels.create(opts);
           console.log(`    + created game ${isForum ? 'forum' : 'channel'}: #${name}`);
+        }
+        if (tmpl.freekeyLink) {
+          await ensurePanel(channel, hasButton('freekey_link'), () => buildFreeKeyLinkPanel(game), `${game.name} free-key link panel`);
         }
       }
       // Position each game category near the top (after INFORMATION + SUPPORT).

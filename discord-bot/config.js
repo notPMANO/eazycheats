@@ -78,6 +78,10 @@ const MOD_ROLES = ['Moderator'];
 // of the KEY SAFES vaults — the old free/premium key generator has been removed.
 const KEY_ALERTS_CHANNEL = 'key-alerts';
 
+// The web page where users actually get their free key. The Discord "Get Free
+// Key" button just hands them this link (Discord can't write the clipboard).
+const FREE_KEY_URL = 'https://eazycheats.com/key';
+
 // Reusable suggestion-forum tags (used by each game's suggestions forum).
 const SUGGESTION_TAGS = [
   { name: 'Feature',  emoji: { name: '💡' } },
@@ -118,13 +122,15 @@ const GAMES = [
   },
 ];
 
-// The channels every game gets (name = `<prefix>-<suffix>`). The old per-game
-// free-key channel was removed with the key system — a new one is coming.
+// The channels every game gets (name = `<prefix>-<suffix>`).
+//   onlyGames  -> restrict this channel to specific game keys (skip the rest)
+//   freekeyLink -> post the "Get Free Key" link panel in this channel
 const GAME_CHANNELS = [
   { suffix: 'general',     type: 'text' },
   { suffix: 'suggestions', type: 'forum' },
   { suffix: 'updates',     type: 'text', readonly: true },
   { suffix: 'to-do-list',  type: 'text', readonly: true },
+  { suffix: 'free-key',    type: 'text', readonly: true, freekeyLink: true, onlyGames: ['prior'] },
   { suffix: 'script',      type: 'text', readonly: true },
 ];
 
@@ -220,6 +226,6 @@ const TICKET_CATEGORY = '🎟️ TICKETS';
 module.exports = {
   ROLES, STAFF_ROLES, TICKET_STAFF_ROLES, MOD_ROLES, VERIFIED_ROLE, RULES,
   CATEGORIES, TICKET_CATEGORY, TICKET_LOG_CHANNEL, WELCOME_CHANNEL,
-  KEY_ALERTS_CHANNEL,
+  KEY_ALERTS_CHANNEL, FREE_KEY_URL,
   GAMES, GAME_CHANNELS, SUGGESTION_TAGS,
 };

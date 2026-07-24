@@ -2,6 +2,7 @@
 const {
   EmbedBuilder, ActionRowBuilder, ButtonBuilder, ButtonStyle,
 } = require('discord.js');
+const { FREE_KEY_URL } = require('./config');
 
 // The panel that lives in #open-a-ticket (support only — free keys moved into games).
 function buildTicketPanel() {
@@ -48,6 +49,30 @@ function buildGamePicker(games) {
   return { embeds: [embed], components: [row] };
 }
 
+// Free-key link panel (in each game's <prefix>-free-key channel). The button
+// hands the user the key-page link to copy/open — key generation lives on the site.
+function buildFreeKeyLinkPanel(game) {
+  const embed = new EmbedBuilder()
+    .setColor(0x2ecc71)
+    .setTitle(`${game.emoji} ${game.name} — Free Key`)
+    .setDescription(
+      '**Go here for your free key:**\n' +
+      FREE_KEY_URL + '\n\n' +
+      'Or click **Get Free Key** below and the link will be sent to you to copy.'
+    )
+    .setFooter({ text: 'EazyCheats — free key' });
+
+  const row = new ActionRowBuilder().addComponents(
+    new ButtonBuilder()
+      .setCustomId('freekey_link')
+      .setLabel('Get Free Key')
+      .setEmoji('🔑')
+      .setStyle(ButtonStyle.Success)
+  );
+
+  return { embeds: [embed], components: [row] };
+}
+
 // The first message inside a freshly created ticket channel.
 function buildTicketWelcome(userId, staffMention) {
   const embed = new EmbedBuilder()
@@ -88,5 +113,5 @@ function buildStaffCommandsInfo() {
 }
 
 module.exports = {
-  buildTicketPanel, buildTicketWelcome, buildGamePicker, buildStaffCommandsInfo,
+  buildTicketPanel, buildTicketWelcome, buildGamePicker, buildFreeKeyLinkPanel, buildStaffCommandsInfo,
 };

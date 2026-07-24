@@ -9,7 +9,7 @@ const {
 } = require('discord.js');
 const {
   TICKET_STAFF_ROLES, MOD_ROLES, VERIFIED_ROLE, TICKET_CATEGORY, TICKET_LOG_CHANNEL,
-  WELCOME_CHANNEL, KEY_ALERTS_CHANNEL, GAMES,
+  WELCOME_CHANNEL, KEY_ALERTS_CHANNEL, FREE_KEY_URL, GAMES,
 } = require('./config');
 const { buildTicketWelcome, buildGamePicker } = require('./ticket-panel');
 const { buildWelcomeGreeting } = require('./welcome');
@@ -80,6 +80,7 @@ client.on('interactionCreate', async (interaction) => {
       if (id === 'verify_agree') return verifyMember(interaction);
       if (id === 'ticket_open') return openTicket(interaction);
       if (id.startsWith('game_toggle_')) return toggleGame(interaction, id.slice('game_toggle_'.length));
+      if (id === 'freekey_link') return sendFreeKeyLink(interaction);
       if (id === 'ticket_close') return closeTicket(interaction);
     } else if (interaction.isChatInputCommand()) {
       if (interaction.commandName === 'add') return ticketAddRemove(interaction, true);
@@ -142,6 +143,15 @@ async function toggleGame(interaction, gameKey) {
   }
   await member.roles.add(role, 'Game picker').catch(() => {});
   return interaction.reply({ content: `${game.emoji} Unlocked **${game.name}** — its channels are now visible!`, ...EPHEMERAL });
+}
+
+// "Get Free Key" button — privately hand the user the key-page link to copy/open.
+// (Discord buttons can't write the clipboard, so we deliver the bare link.)
+async function sendFreeKeyLink(interaction) {
+  return interaction.reply({
+    content: `🔑 Here's your free-key link — tap to open, or press & hold / select it to copy:\n\n${FREE_KEY_URL}`,
+    ...EPHEMERAL,
+  });
 }
 
 const memberIsMod = (member) =>
