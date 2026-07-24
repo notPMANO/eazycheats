@@ -19,7 +19,7 @@ local IS_MOBILE = UserInputService.TouchEnabled and not UserInputService.Keyboar
 -- The whole window is sized in absolute pixels, which come out physically tiny on a
 -- dense phone screen. A UIScale on the window blows the entire UI up uniformly on
 -- mobile — one object, no per-element rewrite — so buttons become finger-sized.
-local MOBILE_SCALE = 1.35
+local MOBILE_SCALE = 1.12
 
 -- ═══════════════════════════════════════
 -- COLORS (edit these to retheme)
@@ -493,17 +493,11 @@ function Library:_createMobileToggle()
     btn.Position = UDim2.new(0, 16, 0.5, -28)
     btn.BackgroundColor3 = Color3.fromRGB(104, 44, 190)
     btn.BorderSizePixel = 0
-    btn.Text = "EZ"
-    btn.TextColor3 = Color3.fromRGB(255, 255, 255)
-    btn.TextSize = 24
-    btn.Font = Enum.Font.GothamBlack
-    -- Dark halo on the letters so they stay legible over bright game scenes.
-    btn.TextStrokeColor3 = Color3.fromRGB(30, 12, 60)
-    btn.TextStrokeTransparency = 0.35
+    btn.Text = ""                                   -- wordmark is a separate label (below)
     btn.AutoButtonColor = false
     btn.Parent = mgui
     makeCorner(btn, 28)                              -- 28 = half of 56 → full circle
-    makeStroke(btn, Color3.fromRGB(240, 205, 255), 2)
+    makeStroke(btn, Color3.fromRGB(255, 255, 255), 2.5)   -- white outer ring
 
     -- Diagonal purple gradient for depth (same tones as the banner badge).
     local badgeGrad = Instance.new("UIGradient")
@@ -513,6 +507,22 @@ function Library:_createMobileToggle()
     })
     badgeGrad.Rotation = 65
     badgeGrad.Parent = btn
+
+    -- "EZ" wordmark as its OWN label. A UIGradient tints the text of the object it's
+    -- on, so with the gradient on the button the letters came out purple — drawing
+    -- them on a child the gradient can't reach keeps them white.
+    local mark = Instance.new("TextLabel")
+    mark.Name = "Mark"
+    mark.Size = UDim2.new(1, 0, 1, 0)
+    mark.BackgroundTransparency = 1
+    mark.Text = "EZ"
+    mark.TextColor3 = Color3.fromRGB(255, 255, 255)
+    mark.TextSize = 24
+    mark.Font = Enum.Font.GothamBlack
+    mark.TextStrokeColor3 = Color3.fromRGB(30, 12, 60)   -- dark halo for legibility
+    mark.TextStrokeTransparency = 0.35
+    mark.ZIndex = 2                                       -- above the button face + shadow
+    mark.Parent = btn
 
     -- Soft drop shadow so the badge lifts off the game behind it. Sits just behind
     -- the button and is parented to it, so it follows when the badge is dragged.
@@ -529,15 +539,8 @@ function Library:_createMobileToggle()
     shadow.ZIndex = 0                               -- behind the button face (ZIndex 1)
     shadow.Parent = btn
 
-    self.mobileBtn = btn
-
-    -- The badge has two modes:
-    --   normal    → a TAP opens/closes the menu; dragging does nothing, so you can't
-    --               knock it out of place by accident.
-    --   move mode → dragging repositions it, and the confirm/cancel bar (below) is up.
-    --               A tap does NOT open the menu here — you place the button, then hit
-    --               ✓ to keep the spot or ✕ to snap it back.
-    -- Move mode is entered from Settings → "Move Menu Button".
+    -- Drag the badge anywhere to move it; a clean tap (no drag) opens/closes the menu.
+    -- The small movement threshold keeps a normal tap from ever counting as a drag.
     local dragging, moved, dragStart, startPos = false, false, nil, nil
     btn.InputBegan:Connect(function(input)
         if input.UserInputType == Enum.UserInputType.Touch or input.UserInputType == Enum.UserInputType.MouseButton1 then
@@ -553,98 +556,20 @@ function Library:_createMobileToggle()
         if input.UserInputType == Enum.UserInputType.Touch or input.UserInputType == Enum.UserInputType.MouseMovement then
             local d = input.Position - dragStart
             if (math.abs(d.X) + math.abs(d.Y)) > 8 then moved = true end
-            if self.moveMode then                     -- reposition only while placing
-                btn.Position = UDim2.new(
-                    startPos.X.Scale, startPos.X.Offset + d.X,
-                    startPos.Y.Scale, startPos.Y.Offset + d.Y)
-            end
+            btn.Position = UDim2.new(
+                startPos.X.Scale, startPos.X.Offset + d.X,
+                startPos.Y.Scale, startPos.Y.Offset + d.Y)
         end
     end))
     self:_track(UserInputService.InputEnded:Connect(function(input)
         if self.destroyed or not dragging then return end
         if input.UserInputType == Enum.UserInputType.Touch or input.UserInputType == Enum.UserInputType.MouseButton1 then
             dragging = false
-            -- Only a clean tap in normal mode toggles the menu.
-            if not self.moveMode and not moved then
+            if not moved then                         -- a clean tap → toggle the menu
                 self.gui.Enabled = not self.gui.Enabled
             end
         end
     end))
-
-    -- Confirm / cancel bar, top-middle, shown only while placing the button. Lives in
-    -- the same always-on mobile GUI so it's visible even with the menu hidden.
-    local bar = Instance.new("Frame")
-    bar.Name = "MoveBar"
-    bar.AnchorPoint = Vector2.new(0.5, 0)
-    bar.Position = UDim2.new(0.5, 0, 0, 18)
-    bar.Size = UDim2.new(0, 176, 0, 86)
-    bar.BackgroundTransparency = 1
-    bar.Visible = false
-    bar.Parent = mgui
-    self.moveBar = bar
-
-    local hint = Instance.new("TextLabel")
-    hint.Size = UDim2.new(1, 0, 0, 22)
-    hint.BackgroundColor3 = Color3.fromRGB(30, 13, 58)
-    hint.BackgroundTransparency = 0.15
-    hint.Text = "Drag the button"
-    hint.TextColor3 = COLORS.text
-    hint.TextSize = 13
-    hint.Font = Enum.Font.GothamMedium
-    hint.Parent = bar
-    makeCorner(hint, 6)
-
-    -- Cancel (✕) on the left, confirm (✓) on the right — the universal order.
-    local xBtn = Instance.new("TextButton")
-    xBtn.Size = UDim2.new(0, 52, 0, 52)
-    xBtn.Position = UDim2.new(0, 30, 0, 30)
-    xBtn.BackgroundColor3 = Color3.fromRGB(196, 58, 58)
-    xBtn.Text = "✕"
-    xBtn.TextColor3 = Color3.fromRGB(255, 255, 255)
-    xBtn.TextSize = 26
-    xBtn.Font = Enum.Font.GothamBold
-    xBtn.AutoButtonColor = false
-    xBtn.Parent = bar
-    makeCorner(xBtn, 26)
-    makeStroke(xBtn, Color3.fromRGB(255, 200, 200), 1.5)
-
-    local okBtn = Instance.new("TextButton")
-    okBtn.Size = UDim2.new(0, 52, 0, 52)
-    okBtn.Position = UDim2.new(0, 94, 0, 30)
-    okBtn.BackgroundColor3 = Color3.fromRGB(64, 176, 92)
-    okBtn.Text = "✓"
-    okBtn.TextColor3 = Color3.fromRGB(255, 255, 255)
-    okBtn.TextSize = 28
-    okBtn.Font = Enum.Font.GothamBold
-    okBtn.AutoButtonColor = false
-    okBtn.Parent = bar
-    makeCorner(okBtn, 26)
-    makeStroke(okBtn, Color3.fromRGB(200, 255, 210), 1.5)
-
-    okBtn.MouseButton1Click:Connect(function() self:_endMoveMode(true) end)   -- keep new spot
-    xBtn.MouseButton1Click:Connect(function() self:_endMoveMode(false) end)   -- snap back
-end
-
--- Enter reposition mode: remember where the button was (for cancel), clear the menu
--- off the screen so it's easy to place, and raise the confirm/cancel bar.
-function Library:_startMoveMode()
-    if not self.mobileBtn then return end
-    self.moveMode = true
-    self.mobileHomePos = self.mobileBtn.Position   -- snapshot for cancel
-    self.gui.Enabled = false                        -- clear the screen while placing
-    if self.moveBar then self.moveBar.Visible = true end
-end
-
--- Leave reposition mode. keep=true confirms the new spot; keep=false restores the
--- snapshot. Either way the bar comes down and the Settings toggle flips back off.
-function Library:_endMoveMode(keep)
-    self.moveMode = false
-    if not keep and self.mobileBtn and self.mobileHomePos then
-        self.mobileBtn.Position = self.mobileHomePos
-    end
-    if self.moveBar then self.moveBar.Visible = false end
-    -- Silent so this doesn't loop back through the toggle's callback.
-    if self.moveToggle then pcall(function() self.moveToggle:Set(false, true) end) end
 end
 
 -- ═══════════════════════════════════════
@@ -1053,21 +978,6 @@ function Library:_createSettingsTab()
     })
 
     tab:_addSpacer(10)
-
-    -- Mobile-only: reposition the floating menu badge. Turning this on enters move
-    -- mode (drag the badge, then ✓/✕ up top). PC has no badge, so it's hidden there.
-    if IS_MOBILE then
-        tab:AddSection("Mobile")
-        self.moveToggle = tab:AddToggle({
-            Name = "Move Menu Button",
-            Default = false,
-            Tooltip = "Drag the floating button to a new spot, then tap the check to keep it or the X to cancel.",
-            Callback = function(v)
-                if v then lib:_startMoveMode() else lib:_endMoveMode(true) end
-            end,
-        })
-        tab:_addSpacer(10)
-    end
 
     tab:AddSection("Session")
     tab:AddButton({
